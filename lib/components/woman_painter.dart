@@ -64,6 +64,27 @@ class Pose {
       torso: 0.5, shoulderF: pi - 0.3, elbowF: 0, shoulderB: -1.2, elbowB: -0.2,
       hipF: pi / 2 + 0.05, kneeF: 1.5, hipB: pi + 0.1, kneeB: 1.42);
 
+  /// Steht und hält eine Zigarette an den Mund.
+  static const smoke = Pose(
+      torso: 0, shoulderF: 1.70, elbowF: -2.41, shoulderB: pi + 0.1, elbowB: -0.2,
+      hipF: pi - 0.06, kneeF: 0.06, hipB: pi + 0.07, kneeB: 0.02);
+
+  /// Gehen: [t] in Sekunden.
+  static Pose walk(double t) {
+    final p = math.sin(t * 9);
+    return Pose(
+      torso: 0.05,
+      shoulderF: pi - 0.45 * p,
+      elbowF: -0.35,
+      shoulderB: pi + 0.45 * p,
+      elbowB: -0.35,
+      hipF: pi + 0.42 * p,
+      kneeF: 0.15 + 0.45 * math.max(0, p),
+      hipB: pi - 0.42 * p,
+      kneeB: 0.15 + 0.45 * math.max(0, -p),
+    );
+  }
+
   static const sprawl = Pose(
       torso: 0, shoulderF: 0.8, elbowF: 0.6, shoulderB: -0.9, elbowB: -0.5,
       hipF: pi - 0.4, kneeF: 0.9, hipB: pi + 0.3, kneeB: 0.3);
@@ -88,6 +109,7 @@ class WomanPainter {
     double time = 0,
     bool grounded = false,
     double groundY = 34,
+    bool smile = false,
   }) {
     var hip = const Offset(0, 4);
     var j = _Joints(pose, hip);
@@ -118,22 +140,38 @@ class WomanPainter {
       canvas.drawPath(p, Paint()..color = o.cape!);
     }
 
+    tail(canvas, character, j.hip, pose.torso, time);
+
     // Hinterer Arm und hinteres Bein (etwas dunkler)
     _arm(canvas, j.shoulder, j.elbowB, j.handB, shade, o, darker: true);
     _leg(canvas, j.hip, j.kneeB, j.footB, shade, o, legCovered, darker: true);
 
     // Rumpf
-    _torso(canvas, pose, j, skin, o, style);
+    _torso(canvas, pose, j, skin, o, style, character.body == BodyType.male);
 
     // Vorderes Bein
     _leg(canvas, j.hip, j.kneeF, j.footF, skin, o, legCovered);
     if (o.bottomStyle == BottomStyle.skirt) _skirt(canvas, pose, j, o);
 
     // Kopf
-    _head(canvas, j.head, pose.torso, character, o, style, time);
+    _head(canvas, j.head, pose.torso, character, o, style, time, smile);
 
     // Vorderer Arm
     _arm(canvas, j.shoulder, j.elbowF, j.handF, skin, o);
+  }
+
+  /// Position der vorderen Hand (gleiche Koordinaten wie [paint]).
+  static Offset frontHand(Pose pose, {bool grounded = false, double groundY = 34}) {
+    var hip = const Offset(0, 4);
+    var j = _Joints(pose, hip);
+    if (grounded) {
+      final maxY = [j.footF, j.footB, j.kneeF, j.kneeB, j.handF, j.handB]
+          .map((o) => o.dy)
+          .reduce(math.max);
+      hip = hip.translate(0, groundY - maxY);
+      j = _Joints(pose, hip);
+    }
+    return j.handF;
   }
 
   static Paint _stroke(Color c, double w) => Paint()
@@ -192,14 +230,18 @@ class WomanPainter {
     c.drawLine(f - fwd * 1.5, toe, _stroke(_dark(o.shoes, darker), 4.2));
   }
 
-  static void _torso(Canvas c, Pose pose, _Joints j, Color skin, OutfitDef o, int style) {
+  static void _torso(Canvas c, Pose pose, _Joints j, Color skin, OutfitDef o, int style, bool male) {
     final u = dir(pose.torso), n = dir(pose.torso + math.pi / 2);
     Offset at(double t, double side) => j.hip + u * (torsoLen * t) + n * side;
 
     Path shape(double from, double to) {
-      // Vorder- und Rückenkontur (Seitenansicht, weiblich)
-      const front = [[0.0, 4.4], [0.35, 3.4], [0.62, 4.0], [0.74, 6.0], [0.86, 5.0], [1.0, 3.2]];
-      const back = [[0.0, -5.6], [0.18, -5.4], [0.4, -3.6], [0.75, -4.3], [1.0, -3.8]];
+      // Vorder- und Rückenkontur (Seitenansicht)
+      final front = male
+          ? const [[0.0, 4.0], [0.35, 3.8], [0.62, 4.2], [0.78, 4.9], [0.9, 4.8], [1.0, 3.8]]
+          : const [[0.0, 4.4], [0.35, 3.4], [0.62, 4.0], [0.74, 6.0], [0.86, 5.0], [1.0, 3.2]];
+      final back = male
+          ? const [[0.0, -4.6], [0.18, -4.4], [0.4, -3.9], [0.75, -4.8], [1.0, -4.6]]
+          : const [[0.0, -5.6], [0.18, -5.4], [0.4, -3.6], [0.75, -4.3], [1.0, -3.8]];
       List<Offset> pts(List<List<double>> prof) {
         final r = <Offset>[];
         for (var i = 0; i < prof.length; i++) {
@@ -243,7 +285,7 @@ class WomanPainter {
       c.drawPath(shape(0, 0.36), shaded(o.bottom));
     }
     // Oberteil
-    final topFrom = o.id == 'sport' ? 0.55 : (o.bottomStyle == BottomStyle.skirt ? 0.0 : 0.3);
+    final topFrom = (o.cropTop && !male) ? 0.55 : (o.bottomStyle == BottomStyle.skirt ? 0.0 : 0.3);
     c.drawPath(shape(topFrom, 1), shaded(o.top));
     // Stofffalten
     final fold = _stroke(Color.lerp(o.top, const Color(0xFF000000), 0.25)!, 0.7);
@@ -256,8 +298,14 @@ class WomanPainter {
       c.drawLine(at(0.36, 3.6), at(0.36, -3.8), _stroke(o.belt!, 2.2));
     }
     // Lederjacke: offener Kragen
-    if (o.id == 'leather') {
-      c.drawLine(at(0.95, 3.5), at(0.6, 1.0), _stroke(o.accent!, 1.0));
+    if (o.id == 'leather' || o.id == 'hoodie' || o.id == 'wetsuit') {
+      c.drawLine(at(0.95, 3.5), at(0.4, 3.2), _stroke(o.accent!, 0.9));
+    }
+    if (o.dots != null) {
+      final dp = Paint()..color = o.dots!;
+      for (final q in const [[0.45, 2.0], [0.6, -2.0], [0.75, 1.5], [0.9, -1.0], [0.55, 0.0], [0.82, 3.5]]) {
+        c.drawCircle(at(q[0], q[1]), 0.9, dp);
+      }
     }
     // Schmutz / Risse bei niedrigem Style
     if (style <= 1) {
@@ -292,11 +340,17 @@ class WomanPainter {
   }
 
   static void _head(Canvas c, Offset center, double torso, CharacterDef ch, OutfitDef o,
-      int style, double time) {
+      int style, double time, bool smile) {
     c.save();
     c.translate(center.dx, center.dy);
     c.rotate(torso * 0.7);
     c.scale(headR / 6.6);
+    if (ch.isAnimal) {
+      _animalHead(c, ch, o, style);
+      c.restore();
+      return;
+    }
+    final male = ch.body == BodyType.male;
     final hair = Paint()
       ..shader = Gradient.linear(const Offset(0, -7), const Offset(0, 12), [
         Color.lerp(ch.hair, const Color(0xFFFFFFFF), 0.18)!,
@@ -304,6 +358,7 @@ class WomanPainter {
         Color.lerp(ch.hair, const Color(0xFF000000), 0.35)!,
       ], const [0, 0.4, 1]);
     const r = 6.6;
+    final face = ch.headColor ?? ch.skin;
 
     // Haare hinten
     switch (ch.hairStyle) {
@@ -322,97 +377,159 @@ class WomanPainter {
           ..quadraticBezierTo(-r - 3, 2, -r + 2, 0)
           ..close();
         c.drawPath(p, hair);
-        c.drawCircle(Offset(-r + 0.5, -2.5), 1.6, Paint()..color = const Color(0xFFE91E63));
+        c.drawCircle(const Offset(-r + 0.5, -2.5), 1.6, Paint()..color = const Color(0xFFE91E63));
       case HairStyle.bun:
-        c.drawCircle(Offset(-r + 1, -r + 1), 4.2, hair);
+        c.drawCircle(const Offset(-r + 1, -r + 1), 4.2, hair);
       case HairStyle.bob:
         c.drawRRect(
             RRect.fromRectAndRadius(Rect.fromLTWH(-r - 1.5, -r, r + 2, 2 * r + 1.5),
                 const Radius.circular(4)),
             hair);
+      case HairStyle.short:
+      case HairStyle.buzz:
+      case HairStyle.spiky:
+      case HairStyle.none:
+        break;
     }
 
-    // Hals + Gesicht
-    c.drawRect(Rect.fromLTWH(-2.2, r - 3, 4.4, 5), Paint()..color = ch.skin);
+    // Hals + Gesicht (Männer mit kantigerem Kinn)
+    c.drawRect(Rect.fromLTWH(male ? -2.6 : -2.2, r - 3, male ? 5.2 : 4.4, 5), Paint()..color = ch.skin);
     c.drawOval(Rect.fromCenter(center: const Offset(0.4, 0.4), width: 2 * r, height: 2 * r + 1.6),
-        Paint()..color = ch.skin);
-    // Nase und Kinn
+        Paint()..color = face);
+    if (male) {
+      c.drawRRect(
+          RRect.fromRectAndRadius(Rect.fromLTWH(-1, 1.5, r + 1.4, 5.8), const Radius.circular(2.4)),
+          Paint()..color = face);
+    }
     final nose = Path()
       ..moveTo(r - 0.6, -1.2)
-      ..lineTo(r + 1.5, 1.6)
-      ..lineTo(r - 0.2, 2.2)
+      ..lineTo(r + (male ? 1.9 : 1.5), 1.8)
+      ..lineTo(r - 0.2, 2.4)
       ..close();
-    c.drawPath(nose, Paint()..color = ch.skin);
+    c.drawPath(nose, Paint()..color = face);
+    c.drawCircle(Offset(r + 0.4, 2.1), 0.35, Paint()..color = const Color(0x66000000));
     // Ohr
     c.drawOval(Rect.fromCenter(center: const Offset(-1.2, 0.8), width: 2.4, height: 3.4),
-        Paint()..color = Color.lerp(ch.skin, const Color(0xFF000000), 0.12)!);
+        Paint()..color = Color.lerp(face, const Color(0xFF000000), 0.12)!);
+    // Bart
+    if (ch.beard != null) {
+      final b = Path()
+        ..moveTo(-1.5, 2.0)
+        ..quadraticBezierTo(0, 8.6, r + 0.8, 6.6)
+        ..lineTo(r + 0.6, 4.6)
+        ..quadraticBezierTo(3.5, 5.6, 1.0, 2.4)
+        ..close();
+      c.drawPath(b, Paint()..color = ch.beard!.withValues(alpha: 0.85));
+    }
 
-    // Maske (Superheldin / Ninja)
+    // Maske (Superheld / Ninja)
     if (o.mask != null) {
       if (o.id == 'ninja') {
-        c.drawRect(Rect.fromLTWH(-r, 0.8, 2 * r + 1.6, r), Paint()..color = o.mask!);
+        c.drawRect(const Rect.fromLTWH(-r, 0.8, 2 * r + 1.6, r), Paint()..color = o.mask!);
       }
       c.drawRRect(
-          RRect.fromRectAndRadius(Rect.fromLTWH(-r, -3.4, 2 * r + 0.8, 3.6),
+          RRect.fromRectAndRadius(const Rect.fromLTWH(-r, -3.4, 2 * r + 0.8, 3.6),
               const Radius.circular(1.5)),
           Paint()..color = o.mask!);
     }
 
-    // Auge
+    // Auge mit Lid und Glanzpunkt
     c.drawOval(Rect.fromCenter(center: const Offset(3.4, -1.4), width: 3.2, height: 2.1),
         Paint()..color = const Color(0xFFFFFFFF));
     c.drawCircle(const Offset(4.0, -1.4), 1.0, Paint()..color = ch.eyes);
     c.drawCircle(const Offset(4.2, -1.5), 0.45, Paint()..color = const Color(0xFF000000));
-    // Wimpern und Augenbraue
+    c.drawCircle(const Offset(4.45, -1.8), 0.25, Paint()..color = const Color(0xFFFFFFFF));
     c.drawLine(const Offset(1.8, -2.5), const Offset(5.2, -2.5),
-        _stroke(const Color(0xFF1A1A1A), 0.8));
-    c.drawLine(const Offset(5.0, -2.6), const Offset(5.9, -3.1),
-        _stroke(const Color(0xFF1A1A1A), 0.6));
+        _stroke(const Color(0xFF1A1A1A), male ? 0.5 : 0.8));
+    if (!male) {
+      c.drawLine(const Offset(5.0, -2.6), const Offset(5.9, -3.1),
+          _stroke(const Color(0xFF1A1A1A), 0.6));
+    }
     c.drawLine(const Offset(2.0, -4.3), const Offset(5.4, -4.0),
-        _stroke(Color.lerp(ch.hair, const Color(0xFF000000), 0.3)!, 0.8));
-    // Lippen
+        _stroke(Color.lerp(ch.hair, const Color(0xFF000000), 0.3)!, male ? 1.1 : 0.8));
+    // Mund
     if (o.id != 'ninja') {
-      c.drawOval(Rect.fromCenter(center: const Offset(5.0, 3.6), width: 2.8, height: 1.4),
-          Paint()..color = ch.lips);
-      // Wangen
-      c.drawCircle(const Offset(2.6, 1.8), 1.3,
-          Paint()..color = const Color(0x33E57373));
+      if (smile) {
+        final sm = Path()
+          ..moveTo(3.4, 3.0)
+          ..quadraticBezierTo(5.0, 5.4, 6.6, 3.0);
+        c.drawPath(sm, _stroke(const Color(0xFF6D2B2B), 0.7));
+      } else if (ch.lips != null) {
+        c.drawOval(Rect.fromCenter(center: const Offset(5.0, 3.6), width: 2.8, height: 1.4),
+            Paint()..color = ch.lips!);
+      } else {
+        c.drawLine(const Offset(4.0, 3.8), const Offset(6.2, 3.5),
+            _stroke(Color.lerp(face, const Color(0xFF000000), 0.4)!, 0.6));
+      }
+      c.drawCircle(const Offset(2.6, 1.8), 1.3, Paint()..color = const Color(0x22E57373));
     }
 
-    // Haare oben (Pony)
-    final top = Path()
-      ..moveTo(r + 0.4, -2.6)
-      ..quadraticBezierTo(r, -r - 1.5, 0, -r - 1.2)
-      ..quadraticBezierTo(-r - 1.4, -r, -r - 0.6, 1.5)
-      ..lineTo(-2, 0)
-      ..quadraticBezierTo(1, -4, r + 0.4, -2.6)
-      ..close();
-    c.drawPath(top, hair);
-    if (ch.hairStyle == HairStyle.bob) {
-      c.drawRect(Rect.fromLTWH(-r - 1, -1, 3.5, r + 1), hair);
+    // Haare oben
+    switch (ch.hairStyle) {
+      case HairStyle.none:
+        break;
+      case HairStyle.buzz:
+        c.drawArc(Rect.fromCircle(center: const Offset(0.2, 0.2), radius: r + 0.3), math.pi * 1.05,
+            math.pi * 0.85, true, hair);
+      case HairStyle.short:
+      case HairStyle.spiky:
+        final top = Path()
+          ..moveTo(r + 0.6, -2.8)
+          ..quadraticBezierTo(r, -r - 1.8, 0, -r - 1.6)
+          ..quadraticBezierTo(-r - 1.6, -r, -r - 0.4, 1.8)
+          ..lineTo(-2.2, 1.2)
+          ..lineTo(-2.0, -2.0)
+          ..quadraticBezierTo(2, -4.2, r + 0.6, -2.8)
+          ..close();
+        c.drawPath(top, hair);
+        if (ch.hairStyle == HairStyle.spiky) {
+          for (var i = 0; i < 5; i++) {
+            final bx = -4.5 + i * 2.4;
+            final spike = Path()
+              ..moveTo(bx - 1.4, -r)
+              ..lineTo(bx - 0.6, -r - 4.2 + (i % 2) * 1.2)
+              ..lineTo(bx + 1.4, -r - 0.4)
+              ..close();
+            c.drawPath(spike, hair);
+          }
+        }
+      default:
+        final top = Path()
+          ..moveTo(r + 0.4, -2.6)
+          ..quadraticBezierTo(r, -r - 1.5, 0, -r - 1.2)
+          ..quadraticBezierTo(-r - 1.4, -r, -r - 0.6, 1.5)
+          ..lineTo(-2, 0)
+          ..quadraticBezierTo(1, -4, r + 0.4, -2.6)
+          ..close();
+        c.drawPath(top, hair);
+        if (ch.hairStyle == HairStyle.bob) {
+          c.drawRect(const Rect.fromLTWH(-r - 1, -1, 3.5, r + 1), hair);
+        }
     }
 
-    // Style-Effekte
+    _styleEffects(c, ch, o, style);
+    c.restore();
+  }
+
+  static void _styleEffects(Canvas c, CharacterDef ch, OutfitDef o, int style) {
+    const r = 6.6;
     if (style >= 4) {
-      // glänzende Haare
-      c.drawLine(Offset(-3, -r + 0.2), Offset(2, -r - 0.4),
+      c.drawLine(const Offset(-3, -r + 0.2), const Offset(2, -r - 0.4),
           _stroke(const Color(0x88FFFFFF), 1.1));
     }
     if (style >= 5 && o.mask == null) {
       // Sonnenbrille im Haar
-      c.drawLine(Offset(-1, -r - 0.8), Offset(4.5, -r + 0.4),
+      c.drawLine(const Offset(-1, -r - 0.8), const Offset(4.5, -r + 0.4),
           _stroke(const Color(0xFF212121), 1.8));
     }
     if (style <= 1) {
-      // zerzauste Haare
       final s = _stroke(ch.hair, 0.9);
-      c.drawLine(Offset(-2, -r - 1), Offset(-4, -r - 4), s);
-      c.drawLine(Offset(1, -r - 1), Offset(2, -r - 4.5), s);
-      c.drawLine(Offset(-5, -r + 1), Offset(-8, -r - 1), s);
-      c.drawCircle(Offset(1.5, 2.6), 1.0, Paint()..color = const Color(0x665D4037));
+      c.drawLine(const Offset(-2, -r - 1), const Offset(-4, -r - 4), s);
+      c.drawLine(const Offset(1, -r - 1), const Offset(2, -r - 4.5), s);
+      c.drawLine(const Offset(-5, -r + 1), const Offset(-8, -r - 1), s);
+      c.drawCircle(const Offset(1.5, 2.6), 1.0, Paint()..color = const Color(0x665D4037));
     }
     if (style == 0) {
-      // Pflaster
       c.save();
       c.translate(2.2, 1.8);
       c.rotate(-0.5);
@@ -422,7 +539,126 @@ class WomanPainter {
           Paint()..color = const Color(0xFFFFE0B2));
       c.restore();
     }
-    c.restore();
+  }
+
+  /// Tierkopf (Seitenansicht, Blick nach rechts).
+  static void _animalHead(Canvas c, CharacterDef ch, OutfitDef o, int style) {
+    const r = 6.6;
+    final fur = ch.headColor ?? ch.skin;
+    final dark = ch.hair;
+    final furP = Paint()
+      ..shader = Gradient.linear(const Offset(0, -7), const Offset(0, 8),
+          [Color.lerp(fur, const Color(0xFFFFFFFF), 0.15)!, Color.lerp(fur, const Color(0xFF000000), 0.15)!]);
+    c.drawRect(Rect.fromLTWH(-2.6, r - 3, 5.2, 5), Paint()..color = ch.skin);
+    switch (ch.species) {
+      case Species.cat:
+        // Ohren
+        for (final ox in const [-3.5, 1.5]) {
+          final ear = Path()
+            ..moveTo(ox - 2.4, -r + 1.5)
+            ..lineTo(ox, -r - 5)
+            ..lineTo(ox + 2.6, -r + 1)
+            ..close();
+          c.drawPath(ear, furP);
+          c.drawPath(
+              Path()
+                ..moveTo(ox - 1.2, -r + 1)
+                ..lineTo(ox, -r - 3)
+                ..lineTo(ox + 1.3, -r + 0.8)
+                ..close(),
+              Paint()..color = const Color(0xFFF8BBD0));
+        }
+        c.drawCircle(const Offset(0.4, 0), r, furP);
+        // Streifen
+        final stripe = _stroke(dark, 1.0);
+        c.drawLine(const Offset(-1, -r + 0.5), const Offset(-0.5, -r + 3), stripe);
+        c.drawLine(const Offset(-3.5, -r + 1.5), const Offset(-2.8, -r + 4), stripe);
+        // Schnauze
+        c.drawOval(Rect.fromCenter(center: const Offset(r - 0.5, 2.2), width: 4.6, height: 3.6),
+            Paint()..color = const Color(0xFFFFF3E0));
+        c.drawPath(
+            Path()
+              ..moveTo(r + 0.6, 0.6)
+              ..lineTo(r + 1.8, 0.8)
+              ..lineTo(r + 1.0, 1.8)
+              ..close(),
+            Paint()..color = const Color(0xFFF06292));
+        final wh = _stroke(const Color(0xCCFFFFFF), 0.35);
+        for (final dy in const [-0.4, 0.8, 2.0]) {
+          c.drawLine(Offset(r + 0.5, 2.0), Offset(r + 6, 2.0 + dy * 1.6), wh);
+        }
+        // Auge mit Schlitzpupille
+        c.drawOval(Rect.fromCenter(center: const Offset(3.0, -1.6), width: 3.2, height: 2.8),
+            Paint()..color = ch.eyes);
+        c.drawOval(Rect.fromCenter(center: const Offset(3.3, -1.6), width: 0.8, height: 2.4),
+            Paint()..color = const Color(0xFF111111));
+      case Species.dog:
+        c.drawCircle(const Offset(0, 0), r, furP);
+        // Schnauze
+        c.drawRRect(
+            RRect.fromRectAndRadius(const Rect.fromLTWH(2, -0.5, r + 2.6, 5.6), const Radius.circular(2.8)),
+            furP);
+        c.drawOval(Rect.fromCenter(center: const Offset(r + 4.2, 0.6), width: 2.8, height: 2.2),
+            Paint()..color = const Color(0xFF1A1A1A));
+        c.drawLine(const Offset(r + 1, 4.4), const Offset(r + 3.6, 4.2),
+            _stroke(const Color(0xFF3E2723), 0.6));
+        // Schlappohr
+        final ear = Path()
+          ..moveTo(-1.5, -r + 0.5)
+          ..quadraticBezierTo(-6.5, -r + 1, -5.8, 4.5)
+          ..quadraticBezierTo(-3, 5, -1, -1)
+          ..close();
+        c.drawPath(ear, Paint()..color = dark);
+        c.drawCircle(const Offset(2.4, -2.2), 1.1, Paint()..color = const Color(0xFF1A1A1A));
+        c.drawCircle(const Offset(2.7, -2.5), 0.35, Paint()..color = const Color(0xFFFFFFFF));
+      case Species.panda:
+        for (final ox in const [-3.6, 2.6]) {
+          c.drawCircle(Offset(ox, -r + 0.5), 2.4, Paint()..color = dark);
+        }
+        c.drawCircle(const Offset(0.4, 0.2), r + 0.4, furP);
+        c.drawOval(Rect.fromCenter(center: const Offset(r - 0.6, 2.4), width: 4.8, height: 3.6),
+            Paint()..color = const Color(0xFFFFFFFF));
+        c.drawOval(Rect.fromCenter(center: const Offset(r + 1.0, 1.2), width: 2.0, height: 1.4),
+            Paint()..color = dark);
+        // Augenfleck
+        c.save();
+        c.translate(2.6, -1.4);
+        c.rotate(0.5);
+        c.drawOval(Rect.fromCenter(center: Offset.zero, width: 4.2, height: 3.0), Paint()..color = dark);
+        c.restore();
+        c.drawCircle(const Offset(3.0, -1.6), 0.7, Paint()..color = const Color(0xFFFFFFFF));
+      case Species.human:
+        break;
+    }
+    if (o.mask != null && o.id != 'ninja') {
+      c.drawRRect(
+          RRect.fromRectAndRadius(const Rect.fromLTWH(-r + 1, -3.2, 2 * r, 3.2), const Radius.circular(1.5)),
+          Paint()..color = o.mask!.withValues(alpha: 0.9));
+    }
+    _styleEffects(c, ch, o, style >= 5 ? 4 : style);
+  }
+
+  /// Schwanz für Tiere.
+  static void tail(Canvas c, CharacterDef ch, Offset hip, double torsoAngle, double time) {
+    if (!ch.isAnimal) return;
+    final n = dir(torsoAngle + math.pi / 2);
+    final u = dir(torsoAngle);
+    final base = hip - n * 4.5 + u * 1.5;
+    final wag = math.sin(time * 8) * 2;
+    switch (ch.species) {
+      case Species.cat:
+        final p = Path()
+          ..moveTo(base.dx, base.dy)
+          ..quadraticBezierTo(base.dx - n.dx * 12 + wag, base.dy - n.dy * 12 + 6,
+              base.dx - n.dx * 10 + u.dx * 12 + wag, base.dy - n.dy * 10 + u.dy * 12);
+        c.drawPath(p, _stroke(ch.skin, 2.4));
+      case Species.dog:
+        c.drawLine(base, base - n * 6 + u * (6 + wag), _stroke(ch.skin, 2.6));
+      case Species.panda:
+        c.drawCircle(base - n * 1.2, 2.2, Paint()..color = const Color(0xFF222222));
+      case Species.human:
+        break;
+    }
   }
 }
 

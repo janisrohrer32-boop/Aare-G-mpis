@@ -2,9 +2,12 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flame/components.dart';
+import 'package:flutter/painting.dart' show HSVColor;
 
 import '../game/cliff_dive_game.dart';
+import '../models/character.dart';
 import '../models/level.dart';
+import 'woman_painter.dart';
 
 /// Himmel mit Abendlicht – fest am Bildschirm.
 class Sky extends PositionComponent with HasGameReference<CliffDiveGame> {
@@ -124,7 +127,7 @@ class Skyline extends PositionComponent with HasGameReference<CliffDiveGame> {
     final base = far ? const Color(0xFFA3B4C9) : const Color(0xFF6C7D93);
     final lit = far ? const Color(0x22FFFFFF) : const Color(0x66FFE2A8);
     var x = -1800.0;
-    while (x < 1800) {
+    while (x < 3200) {
       final w = 50.0 + rnd.nextDouble() * (far ? 90 : 80);
       final h = (far ? 180.0 : 110.0) + rnd.nextDouble() * (far ? 560 : 330);
       final r = Rect.fromLTWH(x, -h, w, h + 400);
@@ -338,14 +341,14 @@ class Street extends PositionComponent {
     c.drawRect(Rect.fromLTWH(curbX + 9, 0, 6, 600), Paint()..color = const Color(0x66000000));
     // Asphalt mit Körnung
     c.drawRect(
-      Rect.fromLTRB(curbX + 9, 3, 1800, 600),
+      Rect.fromLTRB(curbX + 9, 3, 5000, 600),
       Paint()
         ..shader = Gradient.linear(const Offset(0, 0), const Offset(0, 140),
             const [Color(0xFF55585E), Color(0xFF2B2D31)]),
     );
     final speck = Paint();
-    for (var i = 0; i < 2500; i++) {
-      final x = curbX + 12 + rnd.nextDouble() * 1700;
+    for (var i = 0; i < 6000; i++) {
+      final x = curbX + 12 + rnd.nextDouble() * 4900;
       final y = 4 + rnd.nextDouble() * 140;
       speck.color = rnd.nextBool() ? const Color(0x22FFFFFF) : const Color(0x33000000);
       c.drawRect(Rect.fromLTWH(x, y, 1.4, 1.4), speck);
@@ -356,7 +359,7 @@ class Street extends PositionComponent {
     c.drawOval(Rect.fromLTWH(curbX + 160, 10, 36, 8), Paint()..color = const Color(0xFF2A2A2A));
     // Fahrbahnmarkierung
     final line = Paint()..color = const Color(0xDDEDEDED);
-    for (var x = curbX + 40; x < 1800; x += 80) {
+    for (var x = curbX + 40; x < 5000; x += 80) {
       c.drawRect(Rect.fromLTWH(x, 46, 42, 4), line);
     }
     // Baum auf dem Gehweg
@@ -528,5 +531,150 @@ class DizzyStars extends PositionComponent {
       i == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
     }
     canvas.drawPath(path..close(), Paint()..color = const Color(0xFFFFD600));
+  }
+}
+
+/// Drei Männer auf ihrem Balkon, rauchen und lächeln.
+class SmokingMen extends PositionComponent {
+  SmokingMen({required this.wallX, required this.floorY}) : super(priority: 2);
+
+  final double wallX;
+  final double floorY;
+  double _t = 0;
+
+  static const _men = [
+    CharacterDef(id: 'n1', name: '', price: 0, skin: Color(0xFFE9B994), hair: Color(0xFF3B2A1E),
+        hairStyle: HairStyle.short, body: BodyType.male, beard: Color(0xFF3B2A1E)),
+    CharacterDef(id: 'n2', name: '', price: 0, skin: Color(0xFF8A5A3C), hair: Color(0xFF151010),
+        hairStyle: HairStyle.buzz, body: BodyType.male),
+    CharacterDef(id: 'n3', name: '', price: 0, skin: Color(0xFFF2CCAE), hair: Color(0xFF9E9E9E),
+        hairStyle: HairStyle.short, body: BodyType.male, beard: Color(0xFFBDBDBD)),
+  ];
+  static const _clothes = [
+    OutfitDef(id: 'm1', name: '', price: 0, top: Color(0xFFF5F5F5), bottom: Color(0xFF455A64),
+        bottomStyle: BottomStyle.pants, shoes: Color(0xFF3E2723)),
+    OutfitDef(id: 'm2', name: '', price: 0, top: Color(0xFF2E7D32), bottom: Color(0xFF212121),
+        bottomStyle: BottomStyle.shorts, shoes: Color(0xFFFAFAFA)),
+    OutfitDef(id: 'm3', name: '', price: 0, top: Color(0xFF5C6BC0), bottom: Color(0xFF8D6E63),
+        bottomStyle: BottomStyle.pants, shoes: Color(0xFF212121), longSleeves: true),
+  ];
+
+  static const double depth = 62;
+
+  @override
+  void update(double dt) => _t += dt;
+
+  @override
+  void render(Canvas canvas) {
+    // breiterer Balkon
+    canvas.drawRect(Rect.fromLTWH(wallX, floorY, depth, 8),
+        Paint()
+          ..shader = Gradient.linear(Offset(0, floorY), Offset(0, floorY + 8),
+              const [Color(0xFFE6E8EA), Color(0xFF9EA6AE)]));
+    final xs = [wallX + 12, wallX + 30, wallX + 47];
+    for (var i = 0; i < 3; i++) {
+      canvas.save();
+      canvas.translate(xs[i], floorY - 34 * 0.92);
+      canvas.scale(0.92);
+      // mittlerer Mann schaut nach links zu den anderen
+      if (i == 1) canvas.scale(-1, 1);
+      final pose = i == 1 && (_t % 6) < 3 ? Pose.stand : Pose.smoke;
+      WomanPainter.paint(canvas,
+          pose: pose, character: _men[i], outfit: _clothes[i], grounded: true, smile: true, time: _t);
+      if (pose == Pose.smoke) _cigarette(canvas, i);
+      canvas.restore();
+    }
+    // Glasgeländer davor
+    canvas.drawRect(Rect.fromLTWH(wallX, floorY - 28, depth, 28),
+        Paint()
+          ..shader = Gradient.linear(Offset(wallX, floorY - 28), Offset(wallX + depth, floorY),
+              const [Color(0x5590CAF9), Color(0x33FFFFFF)]));
+    canvas.drawRect(Rect.fromLTWH(wallX, floorY - 31, depth, 3), Paint()..color = const Color(0xFFB0BEC5));
+    canvas.drawRect(Rect.fromLTWH(wallX + depth - 2, floorY - 31, 2, 31), Paint()..color = const Color(0xFF90A4AE));
+  }
+
+  void _cigarette(Canvas canvas, int i) {
+    final hand = WomanPainter.frontHand(Pose.smoke, grounded: true) + const Offset(0.5, -1.0);
+    canvas.drawLine(hand, hand + const Offset(4, -0.6),
+        Paint()
+          ..color = const Color(0xFFF5F5F5)
+          ..strokeWidth = 1.1);
+    final glow = 0.6 + 0.4 * math.sin(_t * 3 + i);
+    canvas.drawCircle(hand + const Offset(4.2, -0.6), 0.8,
+        Paint()..color = Color.fromRGBO(255, 112, 67, glow));
+    // aufsteigender Rauch
+    for (var k = 0; k < 4; k++) {
+      final ph = (_t * 0.6 + k / 4 + i * 0.3) % 1.0;
+      final p = hand + Offset(4.5 + math.sin(ph * 6 + i) * 3 * ph, -2 - ph * 26);
+      canvas.drawCircle(p, 1.5 + ph * 4,
+          Paint()
+            ..color = Color.fromRGBO(230, 230, 230, 0.45 * (1 - ph))
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5));
+    }
+  }
+}
+
+/// Party-Club am Strassenrand – das Ziel nach 10 guten Landungen.
+class PartyClub extends PositionComponent {
+  PartyClub({required Vector2 position}) : super(position: position, priority: 7);
+
+  double _t = 0;
+
+  /// x-Position der Tür relativ zum Club.
+  static const double doorX = 70;
+
+  @override
+  void update(double dt) => _t += dt;
+
+  @override
+  void render(Canvas canvas) {
+    // Lichtkegel vom Dach
+    for (var i = 0; i < 3; i++) {
+      final a = math.sin(_t * 1.3 + i * 2) * 0.5 - math.pi / 2;
+      final o = Offset(40.0 + i * 60, -200);
+      final p = Path()
+        ..moveTo(o.dx, o.dy)
+        ..lineTo(o.dx + math.cos(a - 0.08) * 900, o.dy + math.sin(a - 0.08) * 900)
+        ..lineTo(o.dx + math.cos(a + 0.08) * 900, o.dy + math.sin(a + 0.08) * 900)
+        ..close();
+      canvas.drawPath(p,
+          Paint()
+            ..color = [const Color(0x33E040FB), const Color(0x3340C4FF), const Color(0x33FFEB3B)][i]
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+    }
+    // Gebäude
+    canvas.drawRect(const Rect.fromLTWH(0, -200, 200, 200),
+        Paint()
+          ..shader = Gradient.linear(const Offset(0, -200), Offset.zero,
+              const [Color(0xFF2B1F3A), Color(0xFF1A1424)]));
+    // Neon-Schild
+    final glowCol = Color.lerp(const Color(0xFFFF4FD8), const Color(0xFF52E5FF), (math.sin(_t * 2) + 1) / 2)!;
+    final pb = ParagraphBuilder(ParagraphStyle(textAlign: TextAlign.center, fontSize: 30))
+      ..pushStyle(TextStyle(
+        color: const Color(0xFFFFFFFF),
+        fontSize: 30,
+        fontWeight: FontWeight.w900,
+        shadows: [Shadow(color: glowCol, blurRadius: 12), Shadow(color: glowCol, blurRadius: 4)],
+      ))
+      ..addText('PARTY');
+    final para = pb.build()..layout(const ParagraphConstraints(width: 200));
+    canvas.drawParagraph(para, const Offset(0, -175));
+    // Fenster mit Discolicht
+    for (var i = 0; i < 4; i++) {
+      final c = HSVColor.fromAHSV(1, (_t * 90 + i * 70) % 360, 0.7, 1).toColor();
+      canvas.drawRect(Rect.fromLTWH(14.0 + i * 46, -120, 30, 26), Paint()..color = c.withValues(alpha: 0.75));
+    }
+    // Tür
+    canvas.drawRect(const Rect.fromLTWH(doorX - 18, -62, 36, 62),
+        Paint()
+          ..shader = Gradient.linear(const Offset(0, -62), Offset.zero,
+              const [Color(0xFFFFD180), Color(0xFFFF6E40)]));
+    // roter Teppich und Absperrung
+    canvas.drawRect(const Rect.fromLTWH(doorX - 40, -2, 80, 6), Paint()..color = const Color(0xFFC62828));
+    final gold = Paint()..color = const Color(0xFFD4AF37);
+    for (final x in const [doorX - 44.0, doorX + 44.0]) {
+      canvas.drawRect(Rect.fromLTWH(x - 1.5, -26, 3, 26), gold);
+      canvas.drawCircle(Offset(x, -27), 3, gold);
+    }
   }
 }

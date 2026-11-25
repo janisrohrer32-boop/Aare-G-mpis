@@ -92,6 +92,8 @@ class _Hud extends StatelessWidget {
                         ),
                         child: StyleStars(style: game.style, size: 18),
                       ),
+                      const SizedBox(height: 6),
+                      _Pill(text: 'Serie ${game.streak}/${CliffDiveGame.goalStreak}', small: true),
                     ],
                   ),
                 ),
@@ -175,7 +177,12 @@ class _ResultPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (r.gameOver)
+            if (r.completed) ...[
+              const Text('DURCHGESPIELT!',
+                  style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900, color: Color(0xFF8E24AA))),
+              const Text('10 gute Landungen in Folge. Ab auf die Party!',
+                  textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)),
+            ] else if (r.gameOver)
               const Text('GAME OVER',
                   style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: Colors.black87))
             else
@@ -214,8 +221,11 @@ class _ResultPanel extends StatelessWidget {
             const SizedBox(height: 6),
             Text('${r.runTotal} Punkte',
                 style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
-            if (r.gameOver)
-              Text(r.newHighscore ? 'Neuer Rekord!' : 'Rekord: ${r.highscore}'),
+            if (r.gameOver || r.completed)
+              Text(r.newHighscore ? 'Neuer Rekord!' : 'Rekord: ${r.highscore}')
+            else
+              Text('Serie: ${r.streak}/${CliffDiveGame.goalStreak} gute Landungen',
+                  style: const TextStyle(color: Colors.black54)),
             const SizedBox(height: 8),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.monetization_on, color: Color(0xFFFFC107)),
@@ -226,7 +236,7 @@ class _ResultPanel extends StatelessWidget {
             StyleStars(style: r.styleAfter),
             Text(styleText, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
             const SizedBox(height: 16),
-            if (r.gameOver)
+            if (r.gameOver || r.completed)
               FilledButton.icon(
                 onPressed: game.newRun,
                 icon: const Icon(Icons.replay),

@@ -10,8 +10,10 @@ Spring vom Hochhaus-Balkon, mach in der Luft Saltos und lande in Superhelden-Pos
 - Volle Umdrehungen zählen als Rückwärtssalto (+100) oder Vorwärtssalto (+80)
 - Landung auf dem Asphalt: **Superhelden-Landung** (Risse im Boden), **Gelandet** oder **Bruchlandung**
 - Style-Sterne (Start 3, max. 5): Superhelden-Landung +1, Bruchlandung -1. Bei 0 Sternen ist **Game Over**. Man sieht es der Figur an (Glanz und Glitzer oder zerzauste Haare, Schmutz, Pflaster).
-- Hip-Hop-Soundtrack, Soundeffekte und Sprüche („Whoop whoop!“ / „Hell naaah!“), Ton-Schalter oben links
-- Münzen pro Sprung, Shop mit 5 Charakteren und 6 Outfits (alles lokal gespeichert)
+- **Durchgespielt** nach 10 guten Landungen in Folge: die Figur läuft zur Party
+- 4 Soundtracks (Boom Bap, Lo-Fi, West Coast, Trap), Soundeffekte und Sprüche („Whoop whoop!“ / „Hell naaah!“) mit Frauen-, Männer- und Tierstimme, Ton-Schalter oben links
+- Münzen pro Sprung, Shop mit 13 Figuren (Frauen, Männer, Tiere), 13 Outfits und Musik (alles lokal gespeichert)
+- Kamera folgt der Figur auch bei grossen Höhen; im 5. Stock stehen drei Nachbarn auf dem Balkon
 
 ## Steuerung
 
@@ -34,6 +36,8 @@ Für die Superhelden-Landung muss sie aufrecht und fast ohne Drehung unten ankom
    (im Browser: `flutter run -d chrome`)
 
 Tests: `flutter test`
+
+Zum Ausprobieren gibt es Test-Schalter, z. B. `flutter run -d chrome --dart-define=START_FLOOR=40 --dart-define=GOAL_STREAK=1 --dart-define=DEBUG_PERFECT=true`.
 
 ## Musik und Sounds
 

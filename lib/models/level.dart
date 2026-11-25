@@ -29,7 +29,7 @@ class JumpLevel {
   static const tower = JumpLevel(
     id: 'tower',
     name: 'Hochhaus',
-    startFloor: 8,
+    startFloor: int.fromEnvironment('START_FLOOR', defaultValue: 8),
     floorsPerJump: 3,
     floorHeightMeters: 3,
     skyTop: Color(0xFF5B86B5),

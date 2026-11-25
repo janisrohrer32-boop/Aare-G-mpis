@@ -9,7 +9,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final storage = await StorageService.create();
-  final audio = AudioService(muted: storage.muted);
+  final audio = AudioService(muted: storage.muted)..track = storage.track.file;
   audio.preload();
   runApp(CliffDiveApp(storage: storage, audio: audio));
 }

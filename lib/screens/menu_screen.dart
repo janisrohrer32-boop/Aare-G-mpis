@@ -92,7 +92,7 @@ class MenuScreen extends StatelessWidget {
                   onPressed: () {
                     audio.startMusic();
                     Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => ShopScreen(storage: storage),
+                      builder: (_) => ShopScreen(storage: storage, audio: audio),
                     ));
                   },
                   icon: const Icon(Icons.storefront),

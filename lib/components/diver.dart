@@ -6,7 +6,7 @@ import 'package:flame/components.dart';
 import '../models/character.dart';
 import 'woman_painter.dart';
 
-enum DiverPose { stand, crouch, air, tuck, stretch, hero, sprawl }
+enum DiverPose { stand, crouch, air, tuck, stretch, hero, sprawl, walk }
 
 /// Die Spielfigur. Position = Körpermitte, [angle] = Drehung (0 = aufrecht).
 class Diver extends PositionComponent {
@@ -23,6 +23,9 @@ class Diver extends PositionComponent {
   Pose _shown = Pose.stand;
   bool showSparkles = true;
 
+  /// 1 = sichtbar, 0 = ausgeblendet (z. B. beim Betreten des Clubs).
+  double opacity = 1;
+
   static Pose _target(DiverPose p) => switch (p) {
         DiverPose.stand => Pose.stand,
         DiverPose.crouch => Pose.crouch,
@@ -31,6 +34,7 @@ class Diver extends PositionComponent {
         DiverPose.stretch => Pose.stretch,
         DiverPose.hero => Pose.hero,
         DiverPose.sprawl => Pose.sprawl,
+        DiverPose.walk => Pose.stand,
       };
 
   /// Haltung sofort setzen (ohne Überblenden).
@@ -43,16 +47,22 @@ class Diver extends PositionComponent {
   void update(double dt) {
     _time += dt;
     // weiche Übergänge zwischen Haltungen
-    _shown = Pose.lerp(_shown, _target(pose), math.min(1, dt * 14));
+    final target = pose == DiverPose.walk ? Pose.walk(_time) : _target(pose);
+    _shown = Pose.lerp(_shown, target, math.min(1, dt * 14));
   }
 
   @override
   void render(Canvas canvas) {
+    if (opacity <= 0) return;
+    if (opacity < 1) {
+      canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, opacity));
+    }
     canvas.save();
     canvas.translate(size.x / 2, size.y / 2);
     final grounded = pose == DiverPose.stand ||
         pose == DiverPose.crouch ||
-        pose == DiverPose.hero;
+        pose == DiverPose.hero ||
+        pose == DiverPose.walk;
     if (style >= 4 && showSparkles) _sparkles(canvas);
     WomanPainter.paint(
       canvas,
@@ -65,6 +75,7 @@ class Diver extends PositionComponent {
       groundY: size.y / 2,
     );
     canvas.restore();
+    if (opacity < 1) canvas.restore();
   }
 
   void _sparkles(Canvas canvas) {

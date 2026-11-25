@@ -5,30 +5,41 @@ import 'package:cliff_dive/components/woman_painter.dart';
 import 'package:cliff_dive/models/character.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Rendert eine Übersicht aller Figuren und Outfits als PNG
+/// (nur wenn PREVIEW_OUT gesetzt ist).
 void main() {
   final out = Platform.environment['PREVIEW_OUT'];
-  test('render poses', () async {
+  test('render preview', () async {
     if (out == null) return;
-    final poses = [Pose.stand, Pose.crouch, Pose.air, Pose.tuck, Pose.stretch, Pose.hero, Pose.sprawl];
     final rec = ui.PictureRecorder();
     final c = ui.Canvas(rec);
-    c.drawRect(const ui.Rect.fromLTWH(0, 0, 1400, 900), ui.Paint()..color = const ui.Color(0xFFDDE6EE));
-    for (var row = 0; row < 3; row++) {
-      for (var i = 0; i < poses.length; i++) {
-        c.save();
-        c.translate(100.0 + i * 190, 150.0 + row * 290);
-        c.scale(3.2);
-        WomanPainter.paint(c,
-            pose: poses[i],
-            character: Catalog.characters[row + (row == 2 ? 2 : 0)],
-            outfit: Catalog.outfits[[0, 5, 1][row]],
-            style: [3, 5, 0][row],
-            grounded: i == 5 || i == 0);
-        c.restore();
-      }
+    const w = 1400.0, h = 700.0;
+    c.drawRect(const ui.Rect.fromLTWH(0, 0, w, h), ui.Paint()..color = const ui.Color(0xFFDDE6EE));
+    final chars = Catalog.characters;
+    for (var i = 0; i < chars.length; i++) {
+      c.save();
+      c.translate(55.0 + i * 105, 140);
+      c.scale(2.6);
+      WomanPainter.paint(c, pose: Pose.stand, character: chars[i], outfit: Catalog.outfits[i % Catalog.outfits.length], grounded: true);
+      c.restore();
     }
-    final img = await rec.endRecording().toImage(1400, 900);
+    final outs = Catalog.outfits;
+    for (var i = 0; i < outs.length; i++) {
+      c.save();
+      c.translate(55.0 + i * 105, 380);
+      c.scale(2.6);
+      WomanPainter.paint(c, pose: Pose.stand, character: chars[i % 6], outfit: outs[i], grounded: true);
+      c.restore();
+    }
+    for (var i = 0; i < 6; i++) {
+      c.save();
+      c.translate(80.0 + i * 200, 600);
+      c.scale(2.6);
+      WomanPainter.paint(c, pose: Pose.walk(i * 0.12), character: chars[6 + i], outfit: outs[0], grounded: true);
+      c.restore();
+    }
+    final img = await rec.endRecording().toImage(w.toInt(), h.toInt());
     final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    File('$out/poses.png').writeAsBytesSync(bytes!.buffer.asUint8List());
+    File('$out/preview.png').writeAsBytesSync(bytes!.buffer.asUint8List());
   });
 }

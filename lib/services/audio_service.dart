@@ -18,17 +18,23 @@ class AudioService extends ChangeNotifier {
     'gameover.mp3',
     'hellnah.mp3',
     'whoop.mp3',
+    'hellnah_m.mp3',
+    'whoop_m.mp3',
+    'hellnah_a.mp3',
+    'whoop_a.mp3',
+    'cheer.mp3',
   ];
 
   bool _muted;
   bool _musicStarted = false;
+  String track = 'music_boombap.mp3';
   AudioPlayer? _wind;
 
   bool get muted => _muted;
 
   Future<void> preload() async {
     try {
-      await FlameAudio.audioCache.loadAll([...effects, 'music.mp3']);
+      await FlameAudio.audioCache.loadAll(effects);
     } catch (_) {}
   }
 
@@ -37,11 +43,28 @@ class AudioService extends ChangeNotifier {
     if (_muted || _musicStarted) return;
     _musicStarted = true;
     try {
-      await FlameAudio.bgm.play('music.mp3', volume: 0.45);
+      await FlameAudio.bgm.play(track, volume: 0.45);
     } catch (_) {
       _musicStarted = false;
     }
   }
+
+  /// Wechselt den Soundtrack (spielt sofort, falls Musik läuft).
+  Future<void> setTrack(String file) async {
+    if (file == track) return;
+    track = file;
+    if (_musicStarted) {
+      try {
+        await FlameAudio.bgm.stop();
+      } catch (_) {}
+      _musicStarted = false;
+      await startMusic();
+    }
+  }
+
+  /// Spruch bei der Landung, passend zur Figur ('f', 'm' oder 'a').
+  void voice(String line, String who) =>
+      play(who == 'f' ? '$line.mp3' : '${line}_$who.mp3');
 
   void toggleMute() {
     _muted = !_muted;

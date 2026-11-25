@@ -18,7 +18,7 @@ import '../services/storage_service.dart';
 import 'gesture_input.dart';
 import 'spin.dart';
 
-enum JumpPhase { ready, charging, flying, landed }
+enum JumpPhase { ready, charging, flying, landed, finale }
 
 /// Ergebnis eines Sprungs – wird im Ergebnis-Fenster angezeigt.
 class JumpResult {
@@ -35,6 +35,8 @@ class JumpResult {
     required this.gameOver,
     required this.highscore,
     required this.newHighscore,
+    required this.streak,
+    required this.completed,
   });
 
   final LandingResult landing;
@@ -49,6 +51,12 @@ class JumpResult {
   final bool gameOver;
   final int highscore;
   final bool newHighscore;
+
+  /// Gute Landungen in Folge.
+  final int streak;
+
+  /// Spiel durchgespielt (10 gute Landungen in Folge).
+  final bool completed;
 }
 
 /// Endlos-Lauf: Jeder Sprung startet weiter oben. Bruchlandungen kosten
@@ -72,6 +80,9 @@ class CliffDiveGame extends FlameGame {
   static const double edgeX = -60;
 
   static const int startStyle = 3;
+
+  /// So viele gute Landungen in Folge braucht es zum Durchspielen.
+  static const int goalStreak = int.fromEnvironment('GOAL_STREAK', defaultValue: 10);
   static const int maxStyle = 5;
 
   final JumpLevel level;
@@ -88,6 +99,8 @@ class CliffDiveGame extends FlameGame {
   int style = startStyle;
   int runScore = 0;
   int jumpCount = 0;
+  int streak = 0;
+  PartyClub? _club;
 
   JumpPhase phase = JumpPhase.ready;
   double power = 0;
@@ -126,6 +139,7 @@ class CliffDiveGame extends FlameGame {
       Haze(factor: 0.9),
       Skyline(factor: 0.82, seed: 2, layer: 1),
       tower,
+      SmokingMen(wallX: tower.wallX, floorY: -5 * level.floorHeightMeters * ppm),
       Street(curbX: edgeX + 20),
       GroundShadow(),
     ]);
@@ -143,6 +157,7 @@ class CliffDiveGame extends FlameGame {
     style = startStyle;
     runScore = 0;
     jumpCount = 0;
+    streak = 0;
     _prepareJump();
   }
 
@@ -163,6 +178,9 @@ class CliffDiveGame extends FlameGame {
       e.removeFromParent();
     }
     _effects.clear();
+    _club?.removeFromParent();
+    _club = null;
+    diver.opacity = 1;
     liveScore.value = runScore;
     lastResult = null;
     tower.jumpFloorY = topY;
@@ -184,10 +202,16 @@ class CliffDiveGame extends FlameGame {
   }
 
   /// Kamera folgt der Figur, zeigt aber nie zu viel vom Boden.
-  Vector2 _cameraTarget() => Vector2(
-        (diver.position.x + 10).clamp(-20.0, 300.0),
-        math.min(diver.position.y, -(viewH / 2 / zoom - 130)),
-      );
+  /// Beim Fallen schaut sie etwas voraus (nach unten).
+  Vector2 _cameraTarget() {
+    final lookAhead = phase == JumpPhase.flying
+        ? (diver.velocity.y * 0.12).clamp(0.0, 140.0)
+        : 0.0;
+    return Vector2(
+      math.max(diver.position.x + 10, -20.0),
+      math.min(diver.position.y + lookAhead, -(viewH / 2 / zoom - 130)),
+    );
+  }
 
   // ---------------- Eingabe ----------------
 
@@ -248,8 +272,14 @@ class CliffDiveGame extends FlameGame {
         powerMeter.value = power;
       case JumpPhase.flying:
         _updateFlight(dt);
+      case JumpPhase.finale:
+        _updateFinale(dt);
       case JumpPhase.landed:
         _landedTimer += dt;
+        if (lastResult?.completed == true) {
+          if (_landedTimer > 1.4) _startFinale();
+          break;
+        }
         if (_landedTimer > 1.6 && !overlays.isActive('result')) {
           overlays.add('result');
           final r = lastResult;
@@ -294,7 +324,11 @@ class CliffDiveGame extends FlameGame {
     _landedTimer = 0;
     diver.velocity.setZero();
     audio.stopWind();
-    final landing = LandingJudge.judge(angle: spin.angle, spin: spin.effectiveOmega);
+    // Nur für Tests: --dart-define=DEBUG_PERFECT=true erzwingt saubere Landungen.
+    const forcePerfect = bool.fromEnvironment('DEBUG_PERFECT');
+    final landing = forcePerfect
+        ? const LandingResult(LandingQuality.perfect, 0)
+        : LandingJudge.judge(angle: spin.angle, spin: spin.effectiveOmega);
     final x = diver.position.x;
 
     switch (landing.quality) {
@@ -307,7 +341,8 @@ class CliffDiveGame extends FlameGame {
         _dust(x, 30, 140);
         _shake = 0.25;
         audio.play('land_hero.mp3');
-        Future.delayed(const Duration(milliseconds: 450), () => audio.play('whoop.mp3'));
+        Future.delayed(const Duration(milliseconds: 450),
+            () => audio.voice('whoop', storage.character.voice));
       case LandingQuality.good:
         diver
           ..angle = 0
@@ -327,7 +362,8 @@ class CliffDiveGame extends FlameGame {
         _dust(x, 40, 200);
         _shake = 0.4;
         audio.play('crash.mp3');
-        Future.delayed(const Duration(milliseconds: 350), () => audio.play('hellnah.mp3'));
+        Future.delayed(const Duration(milliseconds: 350),
+            () => audio.voice('hellnah', storage.character.voice));
     }
 
     final trickPoints = performedTricks.fold<int>(0, (s, t) => s + t.basePoints);
@@ -335,6 +371,10 @@ class CliffDiveGame extends FlameGame {
     final jumpPoints = (trickPoints * landing.multiplier).round() + landing.bonus + heightBonus;
     runScore += jumpPoints;
     jumpCount++;
+
+    streak = landing.quality == LandingQuality.crash ? 0 : streak + 1;
+    final completed = streak >= goalStreak;
+    if (completed) storage.addCompletion();
 
     final styleBefore = style;
     style = (style + landing.styleChange).clamp(0, maxStyle);
@@ -360,6 +400,8 @@ class CliffDiveGame extends FlameGame {
       gameOver: gameOver,
       highscore: math.max(best, runScore),
       newHighscore: runScore > best,
+      streak: streak,
+      completed: completed,
     );
     liveScore.value = runScore;
     hint.value = '';
@@ -374,6 +416,32 @@ class CliffDiveGame extends FlameGame {
         position: Vector2(viewW / 2, viewH * 0.4), color: color, fontSize: 30, lifetime: 1.8);
     _effects.add(label);
     camera.viewport.add(label);
+  }
+
+  void _startFinale() {
+    phase = JumpPhase.finale;
+    diver
+      ..angle = 0
+      ..position.y = -diver.size.y / 2
+      ..pose = DiverPose.walk;
+    _club = PartyClub(position: Vector2(diver.position.x + 150, 0));
+    world.add(_club!);
+    audio.play('cheer.mp3', volume: 0.8);
+    hint.value = 'Ab auf die Party!';
+  }
+
+  void _updateFinale(double dt) {
+    final door = _club!.position.x + PartyClub.doorX;
+    if (diver.position.x < door) {
+      diver.position.x = math.min(door, diver.position.x + 75 * dt);
+    } else {
+      diver.opacity = math.max(0, diver.opacity - dt * 2);
+      if (diver.opacity == 0 && !overlays.isActive('result')) {
+        hint.value = '';
+        overlays.add('result');
+        audio.play('whoop.mp3');
+      }
+    }
   }
 
   void _dust(double x, int count, double spread) {
@@ -403,7 +471,18 @@ class CliffDiveGame extends FlameGame {
 
   void _updateCamera(double dt) {
     final vf = camera.viewfinder;
-    vf.position += (_cameraTarget() - vf.position) * math.min(1, dt * 6);
+    final target = _cameraTarget();
+    if (phase == JumpPhase.flying) {
+      // Im Flug direkt mitgehen, damit sie auch bei hohem Tempo im Bild bleibt.
+      final follow = math.min(1.0, dt * 18);
+      vf.position += (target - vf.position) * follow;
+      final maxOff = Vector2(viewW, viewH) / zoom * 0.3;
+      final off = diver.position - vf.position;
+      if (off.y.abs() > maxOff.y) vf.position.y = diver.position.y - maxOff.y * off.y.sign;
+      if (off.x.abs() > maxOff.x) vf.position.x = diver.position.x - maxOff.x * off.x.sign;
+    } else {
+      vf.position += (target - vf.position) * math.min(1, dt * 6);
+    }
     if (_shake > 0) {
       _shake -= dt;
       final r = math.Random();

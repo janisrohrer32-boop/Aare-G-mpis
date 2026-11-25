@@ -79,14 +79,33 @@ class StorageService extends ChangeNotifier {
   // --- Shop ---
   List<String> _owned(String kind) {
     final l = _get<List<String>>('owned_$kind') ?? <String>[];
-    final free = kind == 'char'
-        ? Catalog.characters.where((c) => c.price == 0).map((c) => c.id)
-        : Catalog.outfits.where((o) => o.price == 0).map((o) => o.id);
+    final free = switch (kind) {
+      'char' => Catalog.characters.where((c) => c.price == 0).map((c) => c.id),
+      'music' => Catalog.music.where((m) => m.price == 0).map((m) => m.id),
+      _ => Catalog.outfits.where((o) => o.price == 0).map((o) => o.id),
+    };
     return {...free, ...l}.toList();
   }
 
   bool ownsCharacter(String id) => _owned('char').contains(id);
   bool ownsOutfit(String id) => _owned('outfit').contains(id);
+  bool ownsTrack(String id) => _owned('music').contains(id);
+
+  MusicTrack get track => Catalog.track(_get<String>('sel_music') ?? 'boombap');
+
+  void selectTrack(String id) {
+    if (!ownsTrack(id)) return;
+    _set('sel_music', id);
+    notifyListeners();
+  }
+
+  // --- Durchgespielt ---
+  int get completions => _get<int>('completions') ?? 0;
+
+  void addCompletion() {
+    _set('completions', completions + 1);
+    notifyListeners();
+  }
 
   CharacterDef get character => Catalog.character(_get<String>('sel_char') ?? 'mia');
   OutfitDef get outfit => Catalog.outfit(_get<String>('sel_outfit') ?? 'sport');

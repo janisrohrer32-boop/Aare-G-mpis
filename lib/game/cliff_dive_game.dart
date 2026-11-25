@@ -253,7 +253,7 @@ class CliffDiveGame extends FlameGame {
     spin.omega = SpinState.jumpSpin;
     diver.pose = DiverPose.air;
     powerMeter.visible = false;
-    hint.value = 'Wisch ↑ rückwärts · Wisch ↓ vorwärts · Gegenwischen = bremsen · Tippen = strecken';
+    hint.value = 'Hoch wischen = rückwärts · Runter wischen = vorwärts · Gegenwischen = bremsen · Tippen = strecken';
     audio.play('jump.mp3', volume: 0.8);
     audio.startWind();
   }

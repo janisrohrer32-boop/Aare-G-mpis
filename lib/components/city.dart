@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flame/components.dart';
@@ -7,59 +8,88 @@ import 'package:flutter/painting.dart' show HSVColor;
 import '../game/cliff_dive_game.dart';
 import '../models/character.dart';
 import '../models/level.dart';
+import 'raster.dart';
 import 'woman_painter.dart';
 
 /// Himmel mit Abendlicht – fest am Bildschirm.
+///
+/// Himmel und Sonnenschein sind weiche Verläufe. Sie werden als kleines Bild
+/// vorberechnet (pro Höhenstufe einmal) und nur noch aufgezogen.
 class Sky extends PositionComponent with HasGameReference<CliffDiveGame> {
   Sky(this.level);
   final JumpLevel level;
 
+  static const int _steps = 120;
+  static const double _scale = 1 / 8;
+  final Map<int, Image> _cache = {};
+
+  static final Paint _image = Paint()..filterQuality = FilterQuality.low;
+  static final Paint _sunGlow = Paint()
+    ..shader = Gradient.radial(Offset.zero, 260, const [
+      Color(0xFFFFF6E8),
+      Color(0xD9FFE9CC),
+      Color(0x88FFE6C6),
+      Color(0x3DFFDDB5),
+      Color(0x20FFD7A8),
+      Color(0x00FFD7A8),
+    ], const [0, 0.07, 0.154, 0.29, 0.54, 1]);
+  static final Paint _sunCore = Paint()..color = const Color(0xFFFFF6E8);
+
+  Offset _sun(Vector2 s, double h) => Offset(s.x * 0.82, s.y * (0.66 + h * 0.3));
+
+  Image _render(int key, Vector2 s) {
+    final h = key / _steps;
+    final rec = PictureRecorder();
+    final c = Canvas(rec)..scale(_scale);
+    // Je höher die Kamera, desto tiefer blau der Himmel.
+    final top = Color.lerp(level.skyTop, const Color(0xFF1F3E6B), h)!;
+    c.drawRect(
+        Rect.fromLTWH(0, 0, s.x, s.y),
+        Paint()
+          ..shader = Gradient.linear(Offset.zero, Offset(0, s.y),
+              [top, const Color(0xFF9DB7D3), level.skyBottom], const [0, 0.6, 1]));
+    final sun = _sun(s, h);
+    c.translate(sun.dx, sun.dy);
+    c.drawCircle(Offset.zero, 260, _sunGlow);
+    final pic = rec.endRecording();
+    final img = pic.toImageSync((s.x * _scale).ceil(), (s.y * _scale).ceil());
+    pic.dispose();
+    return img;
+  }
+
   @override
   void render(Canvas canvas) {
     final s = game.camera.viewport.virtualSize;
-    // Je höher die Kamera, desto tiefer blau der Himmel.
-    final h = (-game.camera.viewfinder.position.y / 4000).clamp(0.0, 1.0);
-    final top = Color.lerp(level.skyTop, const Color(0xFF1F3E6B), h)!;
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, s.x, s.y),
-      Paint()
-        ..shader = Gradient.linear(Offset.zero, Offset(0, s.y),
-            [top, const Color(0xFF9DB7D3), level.skyBottom], const [0, 0.6, 1]),
-    );
-    final sun = Offset(s.x * 0.82, s.y * (0.66 + h * 0.3));
-    canvas.drawCircle(sun, 140,
-        Paint()
-          ..color = const Color(0x40FFD7A8)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 60));
-    canvas.drawCircle(sun, 40,
-        Paint()
-          ..color = const Color(0x99FFE9CC)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18));
-    canvas.drawCircle(sun, 18, Paint()..color = const Color(0xFFFFF6E8));
+    final key = ((-game.camera.viewfinder.position.y / 4000).clamp(0.0, 1.0) * _steps).round();
+    final img = _cache[key] ??= _render(key, s);
+    canvas.drawImageRect(img, Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+        Rect.fromLTWH(0, 0, s.x, s.y), _image);
+    canvas.drawCircle(_sun(s, key / _steps), 18, _sunCore);
   }
 }
 
-/// Weiche Wolken weit hinten.
+/// Weiche Wolken weit hinten. Werden einmal als Bild vorberechnet.
 class Clouds extends PositionComponent with HasGameReference<CliffDiveGame> {
   Clouds() : super(priority: -20);
-  Picture? _pic;
+  Raster? _raster;
+
+  @override
+  Future<void> onLoad() async {
+    // Wolken sind ohnehin weich – ein halb aufgelöstes Bild reicht.
+    _raster = await Raster.record(const Rect.fromLTRB(-480, -1660, 580, -40), 0.5, _draw);
+  }
 
   @override
   void update(double dt) => position = game.camera.viewfinder.position * 0.96;
 
   @override
-  void render(Canvas canvas) {
-    _pic ??= _record();
-    canvas.drawPicture(_pic!);
-  }
+  void render(Canvas canvas) => _raster?.draw(canvas);
 
-  Picture _record() {
-    final rec = PictureRecorder();
-    final c = Canvas(rec);
+  static void _draw(Canvas c) {
     final rnd = math.Random(5);
-    for (var i = 0; i < 22; i++) {
-      final cx = -900 + rnd.nextDouble() * 1800;
-      final cy = -1400 + rnd.nextDouble() * 1200;
+    for (var i = 0; i < 12; i++) {
+      final cx = -260 + rnd.nextDouble() * 620;
+      final cy = -1500 + rnd.nextDouble() * 1300;
       final w = 120 + rnd.nextDouble() * 220;
       for (var k = 0; k < 5; k++) {
         c.drawOval(
@@ -77,7 +107,6 @@ class Clouds extends PositionComponent with HasGameReference<CliffDiveGame> {
             ..color = const Color(0x33E8C9B0)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10));
     }
-    return rec.endRecording();
   }
 }
 
@@ -89,18 +118,16 @@ class Haze extends PositionComponent with HasGameReference<CliffDiveGame> {
   @override
   void update(double dt) => position = game.camera.viewfinder.position * factor;
 
+  static final Paint _paint = Paint()
+    ..shader = Gradient.linear(const Offset(0, -500), const Offset(0, 100),
+        const [Color(0x00E9D6C2), Color(0xAAE9D6C2)]);
+
   @override
-  void render(Canvas canvas) {
-    canvas.drawRect(
-      const Rect.fromLTRB(-2000, -500, 2000, 100),
-      Paint()
-        ..shader = Gradient.linear(const Offset(0, -500), const Offset(0, 100),
-            const [Color(0x00E9D6C2), Color(0xAAE9D6C2)]),
-    );
-  }
+  void render(Canvas canvas) => canvas.drawRect(const Rect.fromLTRB(-2000, -500, 2000, 100), _paint);
 }
 
-/// Skyline mit Parallax. Wird einmal gezeichnet und dann als Bild wiederverwendet.
+/// Skyline mit Parallax. Wird einmal als Bild vorberechnet.
+/// Weil sie sich kaum mitbewegt, reicht ein schmaler Ausschnitt.
 class Skyline extends PositionComponent with HasGameReference<CliffDiveGame> {
   Skyline({required this.factor, required this.seed, required this.layer})
       : super(priority: layer == 0 ? -15 : -10);
@@ -108,29 +135,60 @@ class Skyline extends PositionComponent with HasGameReference<CliffDiveGame> {
   final double factor;
   final int seed;
   final int layer;
-  Picture? _pic;
+  Raster? _raster;
+
+  bool get _far => layer == 0;
+  double get _right => _far ? 620 : 1160;
+
+  /// Gebäude als (links, rechts, oberste Kante) – für das Zuschneiden.
+  final List<(double, double, double)> _blocks = [];
+
+  @override
+  Future<void> onLoad() async {
+    _raster = await Raster.record(
+        Rect.fromLTRB(-280, _far ? -900 : -580, _right + 20, 230), _far ? 1.25 : 1.5, _draw,
+        regions: _regions);
+  }
+
+  /// Streifen von je ein paar Gebäuden, oben knapp über dem höchsten Dach
+  /// abgeschnitten. Die Schnitte liegen in den Lücken zwischen den Häusern.
+  List<Rect> _regions() {
+    final out = <Rect>[];
+    var start = 0;
+    while (start < _blocks.length) {
+      var end = start;
+      var top = _blocks[start].$3;
+      while (end + 1 < _blocks.length && _blocks[end].$2 - _blocks[start].$1 < 150) {
+        end++;
+        top = math.min(top, _blocks[end].$3);
+      }
+      final left = start == 0 ? -280.0 : (_blocks[start - 1].$2 + _blocks[start].$1) / 2;
+      final right = end == _blocks.length - 1 ? _right + 20 : (_blocks[end].$2 + _blocks[end + 1].$1) / 2;
+      out.add(Rect.fromLTRB(left, top - 4, right, 230));
+      start = end + 1;
+    }
+    return out;
+  }
 
   @override
   void update(double dt) => position = game.camera.viewfinder.position * factor;
 
   @override
-  void render(Canvas canvas) {
-    _pic ??= _record();
-    canvas.drawPicture(_pic!);
-  }
+  void render(Canvas canvas) => _raster?.draw(canvas);
 
-  Picture _record() {
-    final rec = PictureRecorder();
-    final c = Canvas(rec);
+  void _draw(Canvas c) {
     final rnd = math.Random(seed);
-    final far = layer == 0;
+    final far = _far;
     final base = far ? const Color(0xFFA3B4C9) : const Color(0xFF6C7D93);
     final lit = far ? const Color(0x22FFFFFF) : const Color(0x66FFE2A8);
-    var x = -1800.0;
-    while (x < 3200) {
+    _blocks.clear();
+    var x = -280.0;
+    while (x < _right) {
+      var top = 0.0;
       final w = 50.0 + rnd.nextDouble() * (far ? 90 : 80);
       final h = (far ? 180.0 : 110.0) + rnd.nextDouble() * (far ? 560 : 330);
       final r = Rect.fromLTWH(x, -h, w, h + 400);
+      top = -h;
       // Gebäude mit Licht von rechts (Sonne)
       c.drawRect(
         r,
@@ -144,12 +202,15 @@ class Skyline extends PositionComponent with HasGameReference<CliffDiveGame> {
       if (rnd.nextDouble() < 0.6) {
         final rw = w * (0.3 + rnd.nextDouble() * 0.3);
         c.drawRect(Rect.fromLTWH(r.left + w * 0.2, -h - 12, rw, 12), Paint()..color = base);
+        top = -h - 12;
       }
       if (rnd.nextDouble() < 0.3) {
-        c.drawLine(Offset(r.center.dx, -h), Offset(r.center.dx, -h - 40 - rnd.nextDouble() * 50),
+        final tip = -h - 40 - rnd.nextDouble() * 50;
+        c.drawLine(Offset(r.center.dx, -h), Offset(r.center.dx, tip),
             Paint()
               ..color = base
               ..strokeWidth = 2);
+        top = math.min(top, tip);
       }
       // Fenster
       final wp = Paint()..color = lit;
@@ -165,9 +226,9 @@ class Skyline extends PositionComponent with HasGameReference<CliffDiveGame> {
           }
         }
       }
+      _blocks.add((r.left, r.right, top));
       x += w + 6 + rnd.nextDouble() * 40;
     }
-    return rec.endRecording();
   }
 }
 
@@ -184,13 +245,38 @@ class Tower extends PositionComponent with HasGameReference<CliffDiveGame> {
   static const double left = -700;
   double get wallX => edgeX - balconyDepth;
 
-  Picture? _floor;
-  Picture? _lobby;
+  /// Weiter links als hier ist das Haus nie im Bild.
+  static const double _visibleLeft = -300;
+
+  Raster? _floor;
+  Raster? _lobby;
+
+  static final Paint _roof = Paint()..color = const Color(0xFF59626C);
+  static final Paint _plate = Paint()
+    ..shader = Gradient.linear(Offset.zero, const Offset(0, 8),
+        const [Color(0xFFE6E8EA), Color(0xFF9EA6AE)]);
+  static final Paint _plateShadow = Paint()
+    ..shader = Gradient.linear(const Offset(0, 8), const Offset(0, 28),
+        const [Color(0x50000000), Color(0x00000000)]);
+  static final Paint _post = Paint()..color = const Color(0xFF78858F);
+  static final Paint _handrail = Paint()..color = const Color(0xFFB0BEC5);
+  static final Paint _railPost = Paint()..color = const Color(0xFF90A4AE);
+  late final Paint _glass = Paint()
+    ..shader = Gradient.linear(Offset(wallX, -28), Offset(wallX + balconyDepth - 8, 0),
+        const [Color(0x5590CAF9), Color(0x33FFFFFF)]);
+
+  @override
+  Future<void> onLoad() async {
+    _floor = await Raster.record(
+        Rect.fromLTRB(_visibleLeft, 0, wallX, floorHeight), 2.5, _drawFloor);
+    _lobby = await Raster.record(
+        Rect.fromLTRB(_visibleLeft, -floorHeight, wallX + 6, 0), 2.5, _drawLobby);
+  }
 
   @override
   void render(Canvas canvas) {
-    _floor ??= _recordFloor();
-    _lobby ??= _recordLobby();
+    final floorTile = _floor;
+    if (floorTile == null) return;
     final view = game.camera.visibleWorldRect.inflate(60);
     final topFloor = jumpFloorY - floorHeight * 8;
     // Stockwerke (nur die sichtbaren)
@@ -198,21 +284,20 @@ class Tower extends PositionComponent with HasGameReference<CliffDiveGame> {
       if (y > view.bottom || y + floorHeight < view.top) continue;
       canvas.save();
       canvas.translate(0, y);
-      canvas.drawPicture(_floor!);
+      floorTile.draw(canvas);
       canvas.restore();
       if (y + floorHeight <= jumpFloorY + 1 && y + floorHeight > topFloor) {
         _balcony(canvas, y + floorHeight, (y + floorHeight - jumpFloorY).abs() < 1);
       }
     }
     // Dachkante
-    canvas.drawRect(Rect.fromLTRB(left, topFloor - 14, wallX + 6, topFloor),
-        Paint()..color = const Color(0xFF59626C));
-    canvas.drawPicture(_lobby!);
+    if (topFloor - 14 < view.bottom && topFloor > view.top) {
+      canvas.drawRect(Rect.fromLTRB(_visibleLeft, topFloor - 14, wallX + 6, topFloor), _roof);
+    }
+    if (view.bottom > -floorHeight) _lobby?.draw(canvas);
   }
 
-  Picture _recordFloor() {
-    final rec = PictureRecorder();
-    final c = Canvas(rec);
+  void _drawFloor(Canvas c) {
     final h = floorHeight;
     const spandrel = 22.0;
     // Brüstungsband (Naturstein/Beton) unten im Stockwerk
@@ -262,12 +347,9 @@ class Tower extends PositionComponent with HasGameReference<CliffDiveGame> {
     // Gebäudekante mit Lichtkante
     c.drawRect(Rect.fromLTWH(wallX - 8, 0, 8, h), Paint()..color = const Color(0xFFBFB8AC));
     c.drawRect(Rect.fromLTWH(wallX - 2, 0, 2, h), Paint()..color = const Color(0xFFF1E6D6));
-    return rec.endRecording();
   }
 
-  Picture _recordLobby() {
-    final rec = PictureRecorder();
-    final c = Canvas(rec);
+  void _drawLobby(Canvas c) {
     c.drawRect(Rect.fromLTRB(left, -floorHeight, wallX, 0), Paint()..color = const Color(0xFF3B434B));
     c.drawRect(Rect.fromLTRB(wallX - 110, -86, wallX - 12, 0),
         Paint()
@@ -278,90 +360,108 @@ class Tower extends PositionComponent with HasGameReference<CliffDiveGame> {
       c.drawRect(Rect.fromLTWH(x, -86, 3, 86), frame);
     }
     c.drawRect(Rect.fromLTRB(wallX - 126, -100, wallX + 4, -88), Paint()..color = const Color(0xFF22282E));
-    return rec.endRecording();
   }
 
   void _balcony(Canvas canvas, double y, bool isJumpBalcony) {
     final depth = isJumpBalcony ? balconyDepth : balconyDepth - 8;
+    canvas.save();
+    canvas.translate(0, y);
     // Schatten unter der Platte
-    canvas.drawRect(Rect.fromLTWH(wallX - 4, y + 8, depth + 4, 14),
-        Paint()
-          ..color = const Color(0x55000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+    canvas.drawRect(Rect.fromLTWH(wallX - 4, 8, depth + 4, 20), _plateShadow);
     // Bodenplatte
-    canvas.drawRect(
-        Rect.fromLTWH(wallX, y, depth, 8),
-        Paint()
-          ..shader = Gradient.linear(Offset(0, y), Offset(0, y + 8),
-              const [Color(0xFFE6E8EA), Color(0xFF9EA6AE)]));
+    canvas.drawRect(Rect.fromLTWH(wallX, 0, depth, 8), _plate);
     if (isJumpBalcony) {
       // Geländer nur am Haus, vorne offen (Sprungstelle)
-      canvas.drawRect(Rect.fromLTWH(wallX, y - 30, 3, 30), Paint()..color = const Color(0xFF78858F));
-      return;
+      canvas.drawRect(Rect.fromLTWH(wallX, -30, 3, 30), _post);
+    } else {
+      // Glasgeländer mit Metallhandlauf
+      canvas.drawRect(Rect.fromLTWH(wallX, -28, depth, 28), _glass);
+      canvas.drawRect(Rect.fromLTWH(wallX, -31, depth, 3), _handrail);
+      canvas.drawRect(Rect.fromLTWH(wallX + depth - 2, -31, 2, 31), _railPost);
     }
-    // Glasgeländer mit Metallhandlauf
-    canvas.drawRect(Rect.fromLTWH(wallX, y - 28, depth, 28),
-        Paint()
-          ..shader = Gradient.linear(Offset(wallX, y - 28), Offset(wallX + depth, y),
-              const [Color(0x5590CAF9), Color(0x33FFFFFF)]));
-    canvas.drawRect(Rect.fromLTWH(wallX, y - 31, depth, 3), Paint()..color = const Color(0xFFB0BEC5));
-    canvas.drawRect(Rect.fromLTWH(wallX + depth - 2, y - 31, 2, 31), Paint()..color = const Color(0xFF90A4AE));
+    canvas.restore();
   }
 }
 
 /// Strasse mit Gehweg, Laterne, Baum und geparktem Auto. Oberkante bei y = 0.
-class Street extends PositionComponent {
+/// Baum, Laterne und Auto sind ein vorberechnetes Bild, die Asphalt-Körnung
+/// ein sich wiederholendes Muster.
+class Street extends PositionComponent with HasGameReference<CliffDiveGame> {
   Street({required this.curbX}) : super(priority: 5);
 
   final double curbX;
-  Picture? _pic;
+  Raster? _objects;
+  Paint? _specks;
+
+  static const double _speckTile = 256;
+  static final Paint _sidewalk = Paint()
+    ..shader = Gradient.linear(Offset.zero, const Offset(0, 40),
+        const [Color(0xFFB9B3A8), Color(0xFF8D877D)]);
+  static final Paint _joint = Paint()
+    ..color = const Color(0x55000000)
+    ..strokeWidth = 1;
+  static final Paint _curb = Paint()..color = const Color(0xFFD3CEC4);
+  static final Paint _curbShade = Paint()..color = const Color(0x66000000);
+  static final Paint _asphalt = Paint()
+    ..shader = Gradient.linear(Offset.zero, const Offset(0, 140),
+        const [Color(0xFF55585E), Color(0xFF2B2D31)]);
+  static final Paint _marking = Paint()..color = const Color(0xDDEDEDED);
+
+  @override
+  Future<void> onLoad() async {
+    final texture = await Raster.record(const Rect.fromLTWH(0, 0, _speckTile, 150), 2, _drawSpecks);
+    _specks = Paint()
+      ..shader = ImageShader(texture.image, TileMode.repeated, TileMode.repeated,
+          Float64List.fromList([0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, curbX + 12, 0, 0, 1]));
+    _objects = await Raster.record(Rect.fromLTRB(curbX - 140, -225, curbX + 730, 45), 2, _drawObjects);
+  }
 
   @override
   void render(Canvas canvas) {
-    _pic ??= _record();
-    canvas.drawPicture(_pic!);
-  }
-
-  Picture _record() {
-    final rec = PictureRecorder();
-    final c = Canvas(rec);
-    final rnd = math.Random(11);
+    final view = game.camera.visibleWorldRect;
+    if (view.bottom < -240) return; // Strasse gerade nicht im Bild
+    final l = view.left - 10;
+    final r = view.right + 10;
     // Gehweg mit Platten
-    c.drawRect(Rect.fromLTRB(-1500, 0, curbX, 600),
-        Paint()
-          ..shader = Gradient.linear(Offset.zero, const Offset(0, 40),
-              const [Color(0xFFB9B3A8), Color(0xFF8D877D)]));
-    for (var x = -1500.0; x < curbX; x += 34) {
-      c.drawLine(Offset(x, 0), Offset(x - 6, 30), Paint()
-        ..color = const Color(0x55000000)
-        ..strokeWidth = 1);
+    if (l < curbX) {
+      canvas.drawRect(Rect.fromLTRB(l, 0, curbX, 600), _sidewalk);
+      for (var x = curbX - 34 * ((curbX - l) / 34).floor(); x < curbX; x += 34) {
+        canvas.drawLine(Offset(x, 0), Offset(x - 6, 30), _joint);
+      }
     }
     // Bordstein
-    c.drawRect(Rect.fromLTWH(curbX, -2, 9, 602), Paint()..color = const Color(0xFFD3CEC4));
-    c.drawRect(Rect.fromLTWH(curbX + 9, 0, 6, 600), Paint()..color = const Color(0x66000000));
+    canvas.drawRect(Rect.fromLTWH(curbX, -2, 9, 602), _curb);
+    canvas.drawRect(Rect.fromLTWH(curbX + 9, 0, 6, 600), _curbShade);
     // Asphalt mit Körnung
-    c.drawRect(
-      Rect.fromLTRB(curbX + 9, 3, 5000, 600),
-      Paint()
-        ..shader = Gradient.linear(const Offset(0, 0), const Offset(0, 140),
-            const [Color(0xFF55585E), Color(0xFF2B2D31)]),
-    );
+    if (r > curbX + 9) {
+      canvas.drawRect(Rect.fromLTRB(curbX + 9, 3, r, 600), _asphalt);
+      final specks = _specks;
+      if (specks != null) canvas.drawRect(Rect.fromLTRB(curbX + 12, 3, r, 150), specks);
+      // Fahrbahnmarkierung (nur die sichtbaren Striche)
+      final first = math.max(0, ((l - curbX - 40) / 80).floor());
+      for (var x = curbX + 40 + first * 80; x < r; x += 80) {
+        canvas.drawRect(Rect.fromLTWH(x, 46, 42, 4), _marking);
+      }
+    }
+    _objects?.draw(canvas);
+  }
+
+  static void _drawSpecks(Canvas c) {
+    final rnd = math.Random(11);
     final speck = Paint();
-    for (var i = 0; i < 6000; i++) {
-      final x = curbX + 12 + rnd.nextDouble() * 4900;
-      final y = 4 + rnd.nextDouble() * 140;
+    for (var i = 0; i < 330; i++) {
+      final x = rnd.nextDouble() * (_speckTile - 1.4);
+      final y = 1 + rnd.nextDouble() * 140;
       speck.color = rnd.nextBool() ? const Color(0x22FFFFFF) : const Color(0x33000000);
       c.drawRect(Rect.fromLTWH(x, y, 1.4, 1.4), speck);
     }
+  }
+
+  void _drawObjects(Canvas c) {
     // Flicken und Gully
     c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(curbX + 420, 6, 90, 16), const Radius.circular(6)),
         Paint()..color = const Color(0x22000000));
     c.drawOval(Rect.fromLTWH(curbX + 160, 10, 36, 8), Paint()..color = const Color(0xFF2A2A2A));
-    // Fahrbahnmarkierung
-    final line = Paint()..color = const Color(0xDDEDEDED);
-    for (var x = curbX + 40; x < 5000; x += 80) {
-      c.drawRect(Rect.fromLTWH(x, 46, 42, 4), line);
-    }
     // Baum auf dem Gehweg
     _tree(c, curbX - 70);
     // Laterne
@@ -380,7 +480,6 @@ class Street extends PositionComponent {
         Paint()..color = const Color(0xFFFFF3C4));
     // geparktes Auto
     _car(c, curbX + 560);
-    return rec.endRecording();
   }
 
   void _tree(Canvas c, double x) {
@@ -454,18 +553,24 @@ class Street extends PositionComponent {
 class GroundShadow extends PositionComponent with HasGameReference<CliffDiveGame> {
   GroundShadow() : super(priority: 6);
 
+  final Paint _paint = Paint()..shader = softSpot;
+
+  /// Weicher, runder Fleck mit Radius 1 – wird per Skalierung zum Oval.
+  static final Shader softSpot = Gradient.radial(Offset.zero, 1,
+      const [Color(0xFF000000), Color(0xB3000000), Color(0x00000000)], const [0, 0.5, 1]);
+
   @override
   void render(Canvas canvas) {
     final d = game.diver;
     final height = (-d.position.y).clamp(0.0, 600.0);
     final k = 1 - height / 600;
     if (k <= 0) return;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(d.position.x, 3), width: 26 + 20 * k, height: 6),
-      Paint()
-        ..color = Color.fromRGBO(0, 0, 0, 0.45 * k)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
-    );
+    _paint.color = Color.fromRGBO(0, 0, 0, 0.45 * k);
+    canvas.save();
+    canvas.translate(d.position.x, 3);
+    canvas.scale(13 + 10 * k + 5, 7);
+    canvas.drawCircle(Offset.zero, 1, _paint);
+    canvas.restore();
   }
 }
 
@@ -475,6 +580,10 @@ class Cracks extends PositionComponent {
       : super(position: position, priority: 6);
   final bool big;
   double _t = 0;
+
+  static final Paint _shade = Paint()
+    ..shader = GroundShadow.softSpot
+    ..color = const Color(0x66000000);
 
   @override
   void update(double dt) => _t = math.min(1, _t + dt * 5);
@@ -487,10 +596,13 @@ class Cracks extends PositionComponent {
       ..strokeWidth = 1.6
       ..strokeCap = StrokeCap.round;
     final n = big ? 9 : 5;
-    canvas.drawOval(Rect.fromCenter(center: const Offset(0, 3), width: 60 * _t, height: 8 * _t),
-        Paint()
-          ..color = const Color(0x66000000)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
+    if (_t > 0) {
+      canvas.save();
+      canvas.translate(0, 3);
+      canvas.scale(30 * _t + 5, 4 * _t + 4);
+      canvas.drawCircle(Offset.zero, 1, _shade);
+      canvas.restore();
+    }
     for (var i = 0; i < n; i++) {
       final ang = -math.pi + (i + 0.5) * math.pi / n * 2;
       var pt = Offset.zero;
@@ -535,7 +647,7 @@ class DizzyStars extends PositionComponent {
 }
 
 /// Drei Männer auf ihrem Balkon, rauchen und lächeln.
-class SmokingMen extends PositionComponent {
+class SmokingMen extends PositionComponent with HasGameReference<CliffDiveGame> {
   SmokingMen({required this.wallX, required this.floorY}) : super(priority: 2);
 
   final double wallX;
@@ -564,13 +676,27 @@ class SmokingMen extends PositionComponent {
   @override
   void update(double dt) => _t += dt;
 
+  late final Rect _bounds = Rect.fromLTRB(wallX - 10, floorY - 110, wallX + depth + 20, floorY + 12);
+  late final Paint _plate = Paint()
+    ..shader = Gradient.linear(Offset(0, floorY), Offset(0, floorY + 8),
+        const [Color(0xFFE6E8EA), Color(0xFF9EA6AE)]);
+  late final Paint _glass = Paint()
+    ..shader = Gradient.linear(Offset(wallX, floorY - 28), Offset(wallX + depth, floorY),
+        const [Color(0x5590CAF9), Color(0x33FFFFFF)]);
+  static final Paint _handrail = Paint()..color = const Color(0xFFB0BEC5);
+  static final Paint _railPost = Paint()..color = const Color(0xFF90A4AE);
+  static final Paint _cig = Paint()
+    ..color = const Color(0xFFF5F5F5)
+    ..strokeWidth = 1.1;
+  final Paint _ember = Paint();
+  final Paint _smoke = Paint();
+
   @override
   void render(Canvas canvas) {
+    // Nur zeichnen, wenn der Balkon im Bild ist.
+    if (!game.camera.visibleWorldRect.overlaps(_bounds)) return;
     // breiterer Balkon
-    canvas.drawRect(Rect.fromLTWH(wallX, floorY, depth, 8),
-        Paint()
-          ..shader = Gradient.linear(Offset(0, floorY), Offset(0, floorY + 8),
-              const [Color(0xFFE6E8EA), Color(0xFF9EA6AE)]));
+    canvas.drawRect(Rect.fromLTWH(wallX, floorY, depth, 8), _plate);
     final xs = [wallX + 12, wallX + 30, wallX + 47];
     for (var i = 0; i < 3; i++) {
       canvas.save();
@@ -585,31 +711,25 @@ class SmokingMen extends PositionComponent {
       canvas.restore();
     }
     // Glasgeländer davor
-    canvas.drawRect(Rect.fromLTWH(wallX, floorY - 28, depth, 28),
-        Paint()
-          ..shader = Gradient.linear(Offset(wallX, floorY - 28), Offset(wallX + depth, floorY),
-              const [Color(0x5590CAF9), Color(0x33FFFFFF)]));
-    canvas.drawRect(Rect.fromLTWH(wallX, floorY - 31, depth, 3), Paint()..color = const Color(0xFFB0BEC5));
-    canvas.drawRect(Rect.fromLTWH(wallX + depth - 2, floorY - 31, 2, 31), Paint()..color = const Color(0xFF90A4AE));
+    canvas.drawRect(Rect.fromLTWH(wallX, floorY - 28, depth, 28), _glass);
+    canvas.drawRect(Rect.fromLTWH(wallX, floorY - 31, depth, 3), _handrail);
+    canvas.drawRect(Rect.fromLTWH(wallX + depth - 2, floorY - 31, 2, 31), _railPost);
   }
 
   void _cigarette(Canvas canvas, int i) {
     final hand = WomanPainter.frontHand(Pose.smoke, grounded: true) + const Offset(0.5, -1.0);
-    canvas.drawLine(hand, hand + const Offset(4, -0.6),
-        Paint()
-          ..color = const Color(0xFFF5F5F5)
-          ..strokeWidth = 1.1);
+    canvas.drawLine(hand, hand + const Offset(4, -0.6), _cig);
     final glow = 0.6 + 0.4 * math.sin(_t * 3 + i);
     canvas.drawCircle(hand + const Offset(4.2, -0.6), 0.8,
-        Paint()..color = Color.fromRGBO(255, 112, 67, glow));
+        _ember..color = Color.fromRGBO(255, 112, 67, glow));
     // aufsteigender Rauch
     for (var k = 0; k < 4; k++) {
       final ph = (_t * 0.6 + k / 4 + i * 0.3) % 1.0;
       final p = hand + Offset(4.5 + math.sin(ph * 6 + i) * 3 * ph, -2 - ph * 26);
-      canvas.drawCircle(p, 1.5 + ph * 4,
-          Paint()
-            ..color = Color.fromRGBO(230, 230, 230, 0.45 * (1 - ph))
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5));
+      // zwei Kreise übereinander wirken weich, ohne teuren Weichzeichner
+      _smoke.color = Color.fromRGBO(230, 230, 230, 0.18 * (1 - ph));
+      canvas.drawCircle(p, 2.5 + ph * 4.5, _smoke);
+      canvas.drawCircle(p, 1.2 + ph * 3, _smoke);
     }
   }
 }
@@ -622,6 +742,30 @@ class PartyClub extends PositionComponent {
 
   /// x-Position der Tür relativ zum Club.
   static const double doorX = 70;
+
+  static const _beamColors = [Color(0x2EE040FB), Color(0x2E40C4FF), Color(0x2EFFEB3B)];
+  final Paint _beam = Paint();
+  final Paint _window = Paint();
+
+  // Das Neon-Schild wird pro Farbton nur einmal gebaut.
+  static const _signSteps = 16;
+  final List<Paragraph?> _signs = List.filled(_signSteps + 1, null);
+
+  Paragraph _sign(double mix) {
+    final i = (mix * _signSteps).round();
+    return _signs[i] ??= () {
+      final glowCol = Color.lerp(const Color(0xFFFF4FD8), const Color(0xFF52E5FF), i / _signSteps)!;
+      final pb = ParagraphBuilder(ParagraphStyle(textAlign: TextAlign.center, fontSize: 30))
+        ..pushStyle(TextStyle(
+          color: const Color(0xFFFFFFFF),
+          fontSize: 30,
+          fontWeight: FontWeight.w900,
+          shadows: [Shadow(color: glowCol, blurRadius: 12), Shadow(color: glowCol, blurRadius: 4)],
+        ))
+        ..addText('PARTY');
+      return pb.build()..layout(const ParagraphConstraints(width: 200));
+    }();
+  }
 
   @override
   void update(double dt) => _t += dt;
@@ -637,10 +781,7 @@ class PartyClub extends PositionComponent {
         ..lineTo(o.dx + math.cos(a - 0.08) * 900, o.dy + math.sin(a - 0.08) * 900)
         ..lineTo(o.dx + math.cos(a + 0.08) * 900, o.dy + math.sin(a + 0.08) * 900)
         ..close();
-      canvas.drawPath(p,
-          Paint()
-            ..color = [const Color(0x33E040FB), const Color(0x3340C4FF), const Color(0x33FFEB3B)][i]
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6));
+      canvas.drawPath(p, _beam..color = _beamColors[i]);
     }
     // Gebäude
     canvas.drawRect(const Rect.fromLTWH(0, -200, 200, 200),
@@ -648,21 +789,11 @@ class PartyClub extends PositionComponent {
           ..shader = Gradient.linear(const Offset(0, -200), Offset.zero,
               const [Color(0xFF2B1F3A), Color(0xFF1A1424)]));
     // Neon-Schild
-    final glowCol = Color.lerp(const Color(0xFFFF4FD8), const Color(0xFF52E5FF), (math.sin(_t * 2) + 1) / 2)!;
-    final pb = ParagraphBuilder(ParagraphStyle(textAlign: TextAlign.center, fontSize: 30))
-      ..pushStyle(TextStyle(
-        color: const Color(0xFFFFFFFF),
-        fontSize: 30,
-        fontWeight: FontWeight.w900,
-        shadows: [Shadow(color: glowCol, blurRadius: 12), Shadow(color: glowCol, blurRadius: 4)],
-      ))
-      ..addText('PARTY');
-    final para = pb.build()..layout(const ParagraphConstraints(width: 200));
-    canvas.drawParagraph(para, const Offset(0, -175));
+    canvas.drawParagraph(_sign((math.sin(_t * 2) + 1) / 2), const Offset(0, -175));
     // Fenster mit Discolicht
     for (var i = 0; i < 4; i++) {
       final c = HSVColor.fromAHSV(1, (_t * 90 + i * 70) % 360, 0.7, 1).toColor();
-      canvas.drawRect(Rect.fromLTWH(14.0 + i * 46, -120, 30, 26), Paint()..color = c.withValues(alpha: 0.75));
+      canvas.drawRect(Rect.fromLTWH(14.0 + i * 46, -120, 30, 26), _window..color = c.withValues(alpha: 0.75));
     }
     // Tür
     canvas.drawRect(const Rect.fromLTWH(doorX - 18, -62, 36, 62),

@@ -39,6 +39,10 @@ Tests: `flutter test`
 
 Zum Ausprobieren gibt es Test-Schalter, z. B. `flutter run -d chrome --dart-define=START_FLOOR=40 --dart-define=GOAL_STREAK=1 --dart-define=DEBUG_PERFECT=true`.
 
+`--dart-define=DEBUG_FPS=true` schreibt alle 2 Sekunden die Bildrate in die Konsole. Im Browser lassen sich dann mit `?hide=clouds,street` einzelne Ebenen ausblenden, um zu sehen, was wie viel kostet (Namen: bg, clouds, sky0, haze, sky1, tower, men, street, shadow).
+
+Damit das Spiel flüssig läuft, werden Hintergrund, Hochhaus und Strasse beim Start einmal als Bilder vorberechnet (`lib/components/raster.dart`), und im Browser wird höchstens mit doppelter Pixeldichte gezeichnet.
+
 ## Musik und Sounds
 
 Alle Sounds in `assets/audio/` wurden für dieses Projekt per Code erzeugt (Musik und Effekte synthetisiert, Stimme mit der Open-Source-Sprachausgabe Piper). Sie können frei ausgetauscht werden.

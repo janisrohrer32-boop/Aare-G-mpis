@@ -25,6 +25,20 @@ class AudioService extends ChangeNotifier {
     'cheer.mp3',
   ];
 
+  /// Häufige Effekte laufen über wiederverwendbare Player (Pools). Sonst
+  /// würde für jeden Ton ein neuer Player entstehen, was mit der Zeit ruckelt.
+  static const _pooled = {
+    'whoosh.mp3': 4,
+    'trick.mp3': 4,
+    'jump.mp3': 2,
+    'land_hero.mp3': 2,
+    'land_good.mp3': 2,
+    'crash.mp3': 2,
+    'coin.mp3': 2,
+  };
+
+  final Map<String, AudioPool> _pools = {};
+
   bool _muted;
   bool _musicStarted = false;
   String track = 'music_boombap.mp3';
@@ -36,6 +50,11 @@ class AudioService extends ChangeNotifier {
     try {
       await FlameAudio.audioCache.loadAll(effects);
     } catch (_) {}
+    for (final e in _pooled.entries) {
+      try {
+        _pools[e.key] = await FlameAudio.createPool(e.key, maxPlayers: e.value);
+      } catch (_) {}
+    }
   }
 
   /// Startet die Hintergrundmusik (nach dem ersten Antippen erlaubt).
@@ -83,7 +102,14 @@ class AudioService extends ChangeNotifier {
   Future<void> play(String name, {double volume = 1}) async {
     if (_muted) return;
     try {
-      await FlameAudio.play(name, volume: volume);
+      final pool = _pools[name];
+      if (pool != null) {
+        await pool.start(volume: volume);
+      } else {
+        final player = await FlameAudio.play(name, volume: volume);
+        // Player nach dem Abspielen wieder freigeben.
+        player.onPlayerComplete.first.then((_) => player.dispose()).ignore();
+      }
     } catch (_) {}
   }
 

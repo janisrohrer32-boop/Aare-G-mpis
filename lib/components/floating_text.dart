@@ -19,6 +19,23 @@ class FloatingText extends PositionComponent {
   final double lifetime;
   double _t = 0;
 
+  // Schrift pro Helligkeitsstufe nur einmal aufbauen (statt in jedem Frame).
+  final List<TextPaint?> _paints = List.filled(11, null);
+
+  TextPaint _paint(int step) => _paints[step] ??= TextPaint(
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          color: color.withValues(alpha: step / 10),
+          shadows: [
+            Shadow(
+                color: const Color(0xFF000000).withValues(alpha: 0.45 * step / 10),
+                offset: const Offset(2, 2),
+                blurRadius: 3)
+          ],
+        ),
+      );
+
   @override
   void update(double dt) {
     _t += dt;
@@ -31,19 +48,11 @@ class FloatingText extends PositionComponent {
     final p = (_t / lifetime).clamp(0.0, 1.0);
     final pop = p < 0.15 ? 0.6 + p / 0.15 * 0.5 : (p < 0.25 ? 1.1 - (p - 0.15) : 1.0);
     final alpha = p < 0.7 ? 1.0 : 1 - (p - 0.7) / 0.3;
-    final tp = TextPaint(
-      style: TextStyle(
-        fontSize: fontSize * pop,
-        fontWeight: FontWeight.w900,
-        color: color.withValues(alpha: alpha),
-        shadows: [
-          Shadow(
-              color: const Color(0xFF000000).withValues(alpha: 0.45 * alpha),
-              offset: const Offset(2, 2),
-              blurRadius: 3)
-        ],
-      ),
-    );
-    tp.render(canvas, text, Vector2.zero(), anchor: Anchor.center);
+    final step = (alpha * 10).round();
+    if (step <= 0) return;
+    canvas.save();
+    canvas.scale(pop);
+    _paint(step).render(canvas, text, Vector2.zero(), anchor: Anchor.center);
+    canvas.restore();
   }
 }

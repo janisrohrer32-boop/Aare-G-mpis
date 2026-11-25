@@ -43,6 +43,16 @@
 
   <title>Cliff Dive</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    // Für flüssiges Spielen im Browser: höchstens doppelte Pixeldichte rendern.
+    // Handys mit 3-facher Dichte müssten sonst mehr als doppelt so viele Pixel zeichnen.
+    (function () {
+      var r = window.devicePixelRatio || 1;
+      if (r > 2) {
+        try { Object.defineProperty(window, 'devicePixelRatio', { get: function () { return 2; }, configurable: true }); } catch (e) {}
+      }
+    })();
+  </script>
 </head>
 <body>
   <!--

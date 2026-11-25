@@ -131,18 +131,21 @@ class CliffDiveGame extends FlameGame {
 
   @override
   Future<void> onLoad() async {
-    camera.backdrop.add(Sky(level));
+    if (!_debugFps || !(Uri.base.queryParameters['hide'] ?? '').contains('bg')) camera.backdrop.add(Sky(level));
     tower = Tower(edgeX: edgeX, floorHeight: level.floorHeightMeters * ppm);
-    world.addAll([
-      Clouds(),
-      Skyline(factor: 0.93, seed: 1, layer: 0),
-      Haze(factor: 0.9),
-      Skyline(factor: 0.82, seed: 2, layer: 1),
-      tower,
-      SmokingMen(wallX: tower.wallX, floorY: -5 * level.floorHeightMeters * ppm),
-      Street(curbX: edgeX + 20),
-      GroundShadow(),
-    ]);
+    final hide = _debugFps ? (Uri.base.queryParameters['hide'] ?? '').split(',') : const <String>[];
+    final layers = <String, Component>{
+      'clouds': Clouds(),
+      'sky0': Skyline(factor: 0.93, seed: 1, layer: 0),
+      'haze': Haze(factor: 0.9),
+      'sky1': Skyline(factor: 0.82, seed: 2, layer: 1),
+      'tower': tower,
+      'men': SmokingMen(wallX: tower.wallX, floorY: -5 * level.floorHeightMeters * ppm),
+      'street': Street(curbX: edgeX + 20),
+      'shadow': GroundShadow(),
+    };
+    layers.removeWhere((k, _) => hide.contains(k));
+    world.addAll(layers.values);
     diver = Diver(character: storage.character, outfit: storage.outfit, style: style);
     world.add(diver);
     powerMeter = PowerMeter()..position = Vector2(viewW - 46, viewH / 2 - 110);
@@ -260,9 +263,24 @@ class CliffDiveGame extends FlameGame {
 
   // ---------------- Spiel-Schleife ----------------
 
+  // Nur für Messungen: --dart-define=DEBUG_FPS=true schreibt die Bildrate in die Konsole.
+  static const _debugFps = bool.fromEnvironment('DEBUG_FPS');
+  int _frames = 0;
+  double _fpsTime = 0;
+
   @override
   void update(double dt) {
     super.update(dt);
+    if (_debugFps) {
+      _frames++;
+      _fpsTime += dt;
+      if (_fpsTime >= 2) {
+        // ignore: avoid_print
+        print('FPS ${(_frames / _fpsTime).toStringAsFixed(1)} phase=$phase y=${diver.position.y.round()}');
+        _frames = 0;
+        _fpsTime = 0;
+      }
+    }
     switch (phase) {
       case JumpPhase.ready:
         break;
@@ -444,6 +462,17 @@ class CliffDiveGame extends FlameGame {
     }
   }
 
+  // Weiche Staubwölkchen: runder Farbverlauf statt teurem Weichzeichner.
+  static final List<Paint> _dustPaints = [
+    for (final r in const [5.0, 7.0, 9.0, 11.0])
+      Paint()
+        ..shader = Gradient.radial(Offset.zero, r,
+            const [Color(0x77B5AC9C), Color(0x44B5AC9C), Color(0x00B5AC9C)], const [0, 0.55, 1]),
+  ];
+
+  static CircleParticle _dustPuff(int i) =>
+      CircleParticle(radius: 5.0 + i * 2, paint: _dustPaints[i]);
+
   void _dust(double x, int count, double spread) {
     final rnd = math.Random();
     _addEffect(ParticleSystemComponent(
@@ -457,12 +486,7 @@ class CliffDiveGame extends FlameGame {
           return AcceleratedParticle(
             acceleration: Vector2(-dir * 60, 10),
             speed: Vector2(dir * (30 + rnd.nextDouble() * spread), -10 - rnd.nextDouble() * 50),
-            child: CircleParticle(
-              radius: 3 + rnd.nextDouble() * 6,
-              paint: Paint()
-                ..color = const Color(0x66B5AC9C)
-                ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
-            ),
+            child: _dustPuff(rnd.nextInt(_dustPaints.length)),
           );
         },
       ),

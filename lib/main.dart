@@ -21,7 +21,7 @@ class CliffDiveApp extends StatelessWidget {
       title: 'Cliff Dive',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0288D1)),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF37474F)),
         useMaterial3: true,
       ),
       home: MenuScreen(storage: storage),

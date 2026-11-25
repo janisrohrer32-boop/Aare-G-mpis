@@ -7,9 +7,11 @@ class PowerMeter extends PositionComponent {
   PowerMeter() : super(size: Vector2(26, 220), priority: 50);
 
   double value = 0;
+  bool visible = true;
 
   @override
   void render(Canvas canvas) {
+    if (!visible) return;
     final r = RRect.fromRectAndRadius(size.toRect(), const Radius.circular(13));
     canvas.drawRRect(r, Paint()..color = const Color(0x66000000));
     final fillH = (size.y - 8) * value;

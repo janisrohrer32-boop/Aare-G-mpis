@@ -2,13 +2,15 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 
 import '../game/cliff_dive_game.dart';
-import '../models/cliff_level.dart';
 import '../models/landing.dart';
+import '../models/level.dart';
+import '../models/trick.dart';
 import '../services/storage_service.dart';
+import 'widgets.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key, required this.level, required this.storage});
-  final CliffLevel level;
+  final JumpLevel level;
   final StorageService storage;
 
   @override
@@ -115,31 +117,46 @@ class _ResultPanel extends StatelessWidget {
     final r = game.lastResult;
     if (r == null) return const SizedBox.shrink();
     final color = switch (r.landing.quality) {
-      LandingQuality.perfect => Colors.green,
-      LandingQuality.good => Colors.blue,
-      LandingQuality.bellyFlop => Colors.red,
+      LandingQuality.perfect => Colors.green.shade700,
+      LandingQuality.good => Colors.blueGrey.shade700,
+      LandingQuality.crash => Colors.red.shade700,
     };
+    final counts = <Trick, int>{};
+    for (final t in r.tricks) {
+      counts[t] = (counts[t] ?? 0) + 1;
+    }
+    final styleText = r.styleAfter > r.styleBefore
+        ? 'Sie strahlt noch mehr!'
+        : r.styleAfter < r.styleBefore
+            ? 'Das hat Spuren hinterlassen...'
+            : styleLabel(r.styleAfter);
     return Center(
       child: Container(
-        width: 320,
-        padding: const EdgeInsets.all(24),
+        width: 330,
+        padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: const [BoxShadow(blurRadius: 20, color: Colors.black26)],
+          borderRadius: BorderRadius.circular(26),
+          boxShadow: const [BoxShadow(blurRadius: 24, color: Colors.black38)],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(r.landing.label,
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: color)),
-            const SizedBox(height: 12),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: color)),
+            const SizedBox(height: 10),
             if (r.tricks.isEmpty)
-              const Text('Keine Tricks – versuch mal zu wischen!')
+              const Text('Keine Saltos. Wisch in der Luft nach oben oder unten!',
+                  textAlign: TextAlign.center)
             else
-              for (final t in r.tricks)
-                Row(children: [Text(t.name), const Spacer(), Text('+${t.basePoints}')]),
-            const Divider(height: 24),
+              for (final e in counts.entries)
+                Row(children: [
+                  Text('${e.value}x ${e.key.name}'),
+                  const Spacer(),
+                  Text('+${e.value * e.key.basePoints}'),
+                ]),
+            const Divider(height: 22),
             Row(children: [
               const Text('Landung'),
               const Spacer(),
@@ -148,14 +165,27 @@ class _ResultPanel extends StatelessWidget {
             const SizedBox(height: 8),
             Text('${r.total} Punkte',
                 style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
-            Text(r.newHighscore ? '🏆 Neuer Highscore!' : 'Highscore: ${r.highscore}'),
-            const SizedBox(height: 20),
+            Text(r.newHighscore ? 'Neuer Highscore!' : 'Highscore: ${r.highscore}'),
+            const SizedBox(height: 10),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.monetization_on, color: Color(0xFFFFC107)),
+              const SizedBox(width: 4),
+              Text('+${r.coins} Münzen', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ]),
+            const SizedBox(height: 10),
+            StyleStars(style: r.styleAfter),
+            Text(styleText, style: const TextStyle(color: Colors.black54)),
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: game.reset,
               icon: const Icon(Icons.replay),
               label: const Text('Nochmal springen'),
               style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Zum Menü'),
             ),
           ],
         ),

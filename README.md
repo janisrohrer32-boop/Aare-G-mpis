@@ -1,27 +1,29 @@
 # Cliff Dive 🌊
 
-2D-Klippenspringen für iOS und Android, gebaut mit **Flutter** und der **Flame Engine**.
-Springe von der Klippe, mach in der Luft Saltos und tauche sauber ins Wasser ein.
+2D-Stunt-Springen für iOS und Android, gebaut mit **Flutter** und der **Flame Engine**.
+Spring vom Hochhaus-Balkon, mach in der Luft Saltos und lande in Superhelden-Pose.
 
-## Stand: Schritt 1 – spielbare Grundversion
+## Stand
 
-- Eine Klippe (Bergsee, 5 m)
-- Absprung mit Kraftanzeige (halten = aufladen, loslassen = springen)
-- Zwei Tricks: Rückwärtssalto und Vorwärtssalto
-- Landung wird bewertet: **Perfekt**, **Gut** oder **Bauchklatscher**
-- Highscore wird lokal gespeichert
+- Absprung vom Balkon eines Hochhauses (8. Stock, 24 m) über einer Stadt-Skyline
+- Realistische Drehung: einmal angestossen dreht die Figur weiter, bis man gegensteuert
+- Volle Umdrehungen zählen als Rückwärtssalto (+100) oder Vorwärtssalto (+80)
+- Landung auf dem Asphalt: **Superhelden-Landung** (Risse im Boden), **Gelandet** oder **Bruchlandung**
+- Style-Level (0 bis 5 Sterne): gute Landungen lassen die Figur strahlen, Bruchlandungen hinterlassen Spuren (zerzauste Haare, Schmutz, Pflaster)
+- Münzen pro Sprung, Shop mit 5 Charakteren und 6 Outfits (alles lokal gespeichert)
 
 ## Steuerung
 
 | Wann | Geste | Wirkung |
 |---|---|---|
-| Auf der Klippe | Finger halten, dann loslassen | Kraft aufladen und abspringen (die Anzeige pendelt, triff den richtigen Moment) |
-| In der Luft | Nach oben wischen | Rückwärtssalto (+100) |
-| In der Luft | Nach unten wischen | Vorwärtssalto (+80) |
-| In der Luft | Kurz tippen | Körper strecken für eine saubere Landung |
+| Auf dem Balkon | Finger halten, dann loslassen | Kraft aufladen und abspringen (die Anzeige pendelt) |
+| In der Luft | Nach oben wischen | Rückwärts drehen |
+| In der Luft | Nach unten wischen | Vorwärts drehen |
+| In der Luft | Gegen die Drehung wischen | Drehung stoppen |
+| In der Luft | Kurz tippen | Strecken (dreht viel langsamer) / wieder zusammenrollen |
 
-Ein Salto braucht etwa 0,6 Sekunden. Wer zu spät damit anfängt, klatscht quer aufs Wasser.
-**Perfekt** gibt es nur, wenn man gerade und gestreckt eintaucht.
+Beim Absprung hat die Figur einen leichten Vorwärtsdrall. Wer nichts tut, kippt langsam nach vorne.
+Für die Superhelden-Landung muss sie aufrecht und fast ohne Drehung unten ankommen.
 
 ## Selbst starten
 
@@ -36,18 +38,17 @@ Tests: `flutter test`
 
 ```
 lib/
-  game/        Spiel-Logik (CliffDiveGame, Gesten-Erkennung)
-  components/  Spielobjekte (Springer, Klippe, Wasser, Hintergrund, Texte)
-  models/      Daten (Tricks, Landungsbewertung, Klippen)
-  screens/     Bildschirme (Menü, Spiel)
-  services/    Speichern
+  game/        Spiel-Logik (CliffDiveGame, Drehphysik, Gesten-Erkennung)
+  components/  Spielobjekte (Figur, Hochhaus, Strasse, Skyline, Effekte)
+  models/      Daten (Tricks, Landung, Charaktere und Outfits, Level)
+  screens/     Bildschirme (Menü, Spiel, Shop)
+  services/    Speichern (Münzen, Käufe, Highscore, Style)
 ```
 
-Die Grafiken sind einfache, gezeichnete Platzhalter und können später durch Bilder ersetzt werden.
+Die Figur wird per Code gezeichnet (`components/woman_painter.dart`) und kann später durch echte Grafiken ersetzt werden.
 
 ## Nächste Schritte
 
-2. Punktesystem mit Kombo-Multiplikator
-3. Weitere Klippen und Freischaltung
-4. Shop und Charakter-Anpassung
-5. Grafik, Sound und Feinschliff
+- Kombo-Multiplikator und mehr Tricks (z. B. Schraube)
+- Weitere Absprungorte und Freischaltung
+- Sound und Feinschliff

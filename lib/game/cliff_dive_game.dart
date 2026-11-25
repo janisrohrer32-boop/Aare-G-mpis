@@ -6,21 +6,20 @@ import 'package:flame/game.dart';
 import 'package:flame/particles.dart';
 import 'package:flutter/foundation.dart';
 
-import '../components/background.dart';
-import '../components/cliff.dart';
+import '../components/city.dart';
 import '../components/diver.dart';
 import '../components/floating_text.dart';
 import '../components/power_meter.dart';
-import '../components/water.dart';
-import '../models/cliff_level.dart';
 import '../models/landing.dart';
+import '../models/level.dart';
 import '../models/trick.dart';
 import '../services/storage_service.dart';
 import 'gesture_input.dart';
+import 'spin.dart';
 
-enum DivePhase { ready, charging, flying, splashed }
+enum JumpPhase { ready, charging, flying, landed }
 
-/// Ergebnis eines Sprungs – wird im Ergebnis-Overlay angezeigt.
+/// Ergebnis eines Sprungs – wird im Ergebnis-Fenster angezeigt.
 class RunResult {
   RunResult({
     required this.landing,
@@ -29,6 +28,9 @@ class RunResult {
     required this.total,
     required this.highscore,
     required this.newHighscore,
+    required this.coins,
+    required this.styleBefore,
+    required this.styleAfter,
   });
 
   final LandingResult landing;
@@ -37,42 +39,42 @@ class RunResult {
   final int total;
   final int highscore;
   final bool newHighscore;
+  final int coins;
+  final int styleBefore;
+  final int styleAfter;
 }
 
 class CliffDiveGame extends FlameGame {
-  CliffDiveGame({required this.level, this.storage})
-      : super(
-          camera: CameraComponent.withFixedResolution(width: viewW, height: viewH),
-        );
+  CliffDiveGame({required this.level, required this.storage})
+      : super(camera: CameraComponent.withFixedResolution(width: viewW, height: viewH));
 
   static const double viewW = 400;
   static const double viewH = 800;
 
-  /// Pixel pro Meter in der Spielwelt.
+  /// Pixel pro Meter.
   static const double ppm = 40;
   static const double gravity = 9.81 * ppm;
-  static const double edgeX = -110;
 
-  /// Horizontale Kameraposition (Klippe etwas mehr ins Bild).
-  static const double camX = -40;
+  /// Balkonkante (x) – der Boden liegt bei y = 0.
+  static const double edgeX = -60;
 
-  final CliffLevel level;
-  final StorageService? storage;
+  final JumpLevel level;
+  final StorageService storage;
 
   late final Diver diver;
   late final PowerMeter powerMeter;
+  final SpinState spin = SpinState();
 
-  DivePhase phase = DivePhase.ready;
+  JumpPhase phase = JumpPhase.ready;
   double power = 0;
   double _chargeTime = 0;
-  bool stretched = false;
-  final List<Trick> performedTricks = [];
-  double _splashTimer = 0;
+  double _landedTimer = 0;
   double _shake = 0;
+  final List<Trick> performedTricks = [];
+  final List<Component> _effects = [];
 
   final ValueNotifier<int> liveScore = ValueNotifier(0);
-  final ValueNotifier<String> hint =
-      ValueNotifier('Halten zum Aufladen – loslassen zum Springen');
+  final ValueNotifier<String> hint = ValueNotifier('');
   RunResult? lastResult;
 
   double get topY => -level.heightMeters * ppm;
@@ -91,83 +93,97 @@ class CliffDiveGame extends FlameGame {
   Future<void> onLoad() async {
     camera.backdrop.add(Sky(level));
     world.addAll([
-      ParallaxLayer(level: level, factor: 0.85, kind: 'clouds'),
-      ParallaxLayer(level: level, factor: 0.6, kind: 'mountains'),
-      Cliff(level: level, edgeX: edgeX, topY: topY),
-      Water(level),
+      Skyline(factor: 0.92, seed: 1, color: const Color(0xFFA9B6C8), windowColor: const Color(0x33FFFFFF)),
+      Skyline(factor: 0.8, seed: 2, color: const Color(0xFF7D8BA0), windowColor: const Color(0x55FFE0A0)),
+      Tower(edgeX: edgeX, topY: topY, floorHeight: 3 * ppm),
+      Street(curbX: edgeX + 20),
     ]);
-    diver = Diver();
+    diver = Diver(character: storage.character, outfit: storage.outfit, style: storage.style);
     world.add(diver);
     powerMeter = PowerMeter()..position = Vector2(viewW - 46, viewH / 2 - 110);
     camera.viewport.add(powerMeter);
+    camera.viewfinder.zoom = zoom;
     reset();
   }
 
-  /// Setzt alles für einen neuen Sprung zurück.
+  /// Alles zurück auf den Balkon.
   void reset() {
-    phase = DivePhase.ready;
+    phase = JumpPhase.ready;
     power = 0;
     _chargeTime = 0;
-    stretched = false;
+    _shake = 0;
+    spin.reset();
     performedTricks.clear();
+    for (final e in _effects) {
+      e.removeFromParent();
+    }
+    _effects.clear();
     liveScore.value = 0;
     lastResult = null;
     diver
-      ..position = Vector2(edgeX - 16, topY - diver.size.y / 2)
+      ..character = storage.character
+      ..outfit = storage.outfit
+      ..style = storage.style
+      ..position = Vector2(edgeX - 18, topY - diver.size.y / 2)
       ..angle = 0
-      ..pose = DiverPose.stand
-      ..currentTrick = null
       ..velocity.setZero()
-      ..scale = Vector2.all(1);
-    powerMeter.value = 0;
-    camera.viewfinder.position = Vector2(camX, _cameraTargetY());
-    hint.value = 'Halten zum Aufladen – loslassen zum Springen';
+      ..snapPose(DiverPose.stand);
+    powerMeter
+      ..value = 0
+      ..visible = true;
+    camera.viewfinder.position = _cameraTarget();
+    hint.value = 'Finger halten = Kraft aufladen, loslassen = springen';
     overlays.remove('result');
   }
 
-  double _cameraTargetY() =>
-      math.min(diver.position.y, -(viewH / 2 - 150));
+  static const double zoom = 1.2;
+
+  /// Kamera folgt der Figur, zeigt aber nie zu viel vom Boden.
+  Vector2 _cameraTarget() => Vector2(
+        (diver.position.x + 10).clamp(-20.0, 300.0),
+        math.min(diver.position.y, -(viewH / 2 / zoom - 130)),
+      );
 
   // ---------------- Eingabe ----------------
 
   void _onHoldStart() {
-    if (phase != DivePhase.ready) return;
-    phase = DivePhase.charging;
+    if (phase != JumpPhase.ready) return;
+    phase = JumpPhase.charging;
     _chargeTime = 0;
     diver.pose = DiverPose.crouch;
     hint.value = 'Loslassen zum Springen!';
   }
 
   void _onHoldEnd() {
-    if (phase != DivePhase.charging) return;
+    if (phase != JumpPhase.charging) return;
     _jump();
   }
 
   void _onTap() {
-    if (phase != DivePhase.flying || diver.trickInProgress) return;
-    stretched = true;
-    diver.pose = DiverPose.stretch;
+    if (phase != JumpPhase.flying) return;
+    spin.stretched = !spin.stretched;
   }
 
   void _onSwipe(SwipeDirection dir) {
-    if (phase != DivePhase.flying || diver.trickInProgress) return;
-    final trick = switch (dir) {
-      SwipeDirection.up => Trick.backflip,
-      SwipeDirection.down => Trick.frontflip,
-      _ => null,
-    };
-    if (trick == null) return;
-    stretched = false;
-    diver.startTrick(trick);
+    if (phase != JumpPhase.flying) return;
+    switch (dir) {
+      case SwipeDirection.up:
+        spin.push(-1);
+      case SwipeDirection.down:
+        spin.push(1);
+      default:
+        return;
+    }
   }
 
   void _jump() {
-    phase = DivePhase.flying;
+    phase = JumpPhase.flying;
     final p = power;
-    diver.velocity.setValues((1.2 + 2.3 * p) * ppm, -(2.5 + 3.5 * p) * ppm);
-    diver.pose = DiverPose.normal;
-    powerMeter.value = 0;
-    hint.value = 'Wisch ↑ Rückwärtssalto · Wisch ↓ Vorwärtssalto · Tippen = Strecken';
+    diver.velocity.setValues((1.2 + 2.3 * p) * ppm, -(2.0 + 3.0 * p) * ppm);
+    spin.omega = SpinState.jumpSpin;
+    diver.pose = DiverPose.air;
+    powerMeter.visible = false;
+    hint.value = 'Wisch ↑ rückwärts · Wisch ↓ vorwärts · Gegenwischen = bremsen · Tippen = strecken';
   }
 
   // ---------------- Spiel-Schleife ----------------
@@ -176,22 +192,17 @@ class CliffDiveGame extends FlameGame {
   void update(double dt) {
     super.update(dt);
     switch (phase) {
-      case DivePhase.ready:
+      case JumpPhase.ready:
         break;
-      case DivePhase.charging:
+      case JumpPhase.charging:
         _chargeTime += dt;
-        // Pendelt hoch und runter – den richtigen Moment erwischen!
         power = (1 - math.cos(_chargeTime * math.pi * 1.2)) / 2;
         powerMeter.value = power;
-      case DivePhase.flying:
+      case JumpPhase.flying:
         _updateFlight(dt);
-      case DivePhase.splashed:
-        _splashTimer += dt;
-        diver.position.y += 60 * dt;
-        diver.scale = Vector2.all(math.max(0, 1 - _splashTimer * 1.5));
-        if (_splashTimer > 1.3 && !overlays.isActive('result')) {
-          overlays.add('result');
-        }
+      case JumpPhase.landed:
+        _landedTimer += dt;
+        if (_landedTimer > 1.4 && !overlays.isActive('result')) overlays.add('result');
     }
     _updateCamera(dt);
   }
@@ -200,33 +211,71 @@ class CliffDiveGame extends FlameGame {
     diver.velocity.y += gravity * dt;
     diver.position += diver.velocity * dt;
 
-    final done = diver.updateTrick(dt);
-    if (done != null) {
-      performedTricks.add(done);
-      liveScore.value += done.basePoints;
-      world.add(FloatingText(done.name,
+    for (final t in spin.update(dt)) {
+      performedTricks.add(t);
+      liveScore.value += t.basePoints;
+      _addEffect(FloatingText(t.name,
           position: diver.position + Vector2(0, -60), color: const Color(0xFFFFEB3B)));
-      world.add(FloatingText('+${done.basePoints}',
-          position: diver.position + Vector2(0, -28), fontSize: 22));
+      _addEffect(FloatingText('+${t.basePoints}',
+          position: diver.position + Vector2(0, -30), fontSize: 22));
     }
+    diver.angle = spin.angle;
+    diver.pose = spin.stretched
+        ? DiverPose.stretch
+        : (spin.effectiveOmega.abs() > 3 ? DiverPose.tuck : DiverPose.air);
 
-    if (diver.position.y >= -4) _enterWater();
+    if (diver.position.y >= -diver.size.y / 2) _land();
   }
 
-  void _enterWater() {
-    phase = DivePhase.splashed;
-    _splashTimer = 0;
-    final landing = LandingJudge.judge(
-      angle: diver.angle,
-      stretched: stretched,
-      trickInProgress: diver.trickInProgress,
-    );
+  void _addEffect(Component c) {
+    _effects.add(c);
+    world.add(c);
+  }
+
+  void _land() {
+    phase = JumpPhase.landed;
+    _landedTimer = 0;
+    diver.velocity.setZero();
+    final landing = LandingJudge.judge(angle: spin.angle, spin: spin.effectiveOmega);
+    final x = diver.position.x;
+
+    switch (landing.quality) {
+      case LandingQuality.perfect:
+        diver
+          ..angle = 0
+          ..position.y = -diver.size.y / 2
+          ..pose = DiverPose.hero;
+        _addEffect(Cracks(position: Vector2(x + 4, 1), big: true));
+        _dust(x, 30, 140);
+        _shake = 0.25;
+      case LandingQuality.good:
+        diver
+          ..angle = 0
+          ..position.y = -diver.size.y / 2
+          ..pose = DiverPose.crouch;
+        _dust(x, 16, 90);
+      case LandingQuality.crash:
+        var a = spin.angle % (2 * math.pi);
+        if (a > math.pi) a -= 2 * math.pi;
+        final side = a >= 0 ? 1.0 : -1.0;
+        diver
+          ..angle = side * math.pi / 2
+          ..position.y = -9
+          ..snapPose(DiverPose.sprawl);
+        _addEffect(DizzyStars(position: Vector2(x + side * 30, -26)));
+        _dust(x, 40, 200);
+        _shake = 0.4;
+    }
+
     final trickPoints = performedTricks.fold<int>(0, (s, t) => s + t.basePoints);
     final total = (trickPoints * landing.multiplier).round() + landing.bonus;
-
-    final best = storage?.highscore(level.id) ?? 0;
-    final isNew = total > best;
-    storage?.submitScore(level.id, total);
+    final best = storage.highscore(level.id);
+    storage.submitScore(level.id, total);
+    final coins = 5 + total ~/ 10;
+    storage.addCoins(coins);
+    final styleBefore = storage.style;
+    storage.changeStyle(landing.styleChange);
+    diver.style = storage.style;
 
     lastResult = RunResult(
       landing: landing,
@@ -234,56 +283,51 @@ class CliffDiveGame extends FlameGame {
       trickPoints: trickPoints,
       total: total,
       highscore: math.max(best, total),
-      newHighscore: isNew && total > 0,
+      newHighscore: total > best && total > 0,
+      coins: coins,
+      styleBefore: styleBefore,
+      styleAfter: storage.style,
     );
     liveScore.value = total;
     hint.value = '';
 
-    _spawnSplash(landing.quality);
     final color = switch (landing.quality) {
       LandingQuality.perfect => const Color(0xFF76FF03),
       LandingQuality.good => const Color(0xFFFFFFFF),
-      LandingQuality.bellyFlop => const Color(0xFFFF5252),
+      LandingQuality.crash => const Color(0xFFFF5252),
     };
-    world.add(FloatingText(landing.label,
-        position: Vector2(diver.position.x, -90), color: color, fontSize: 34, lifetime: 1.6));
-    if (landing.quality == LandingQuality.bellyFlop) _shake = 0.4;
+    final label = FloatingText(landing.label,
+        position: Vector2(viewW / 2, viewH * 0.4), color: color, fontSize: 30, lifetime: 1.8);
+    _effects.add(label);
+    camera.viewport.add(label);
   }
 
-  void _spawnSplash(LandingQuality q) {
-    final count = switch (q) {
-      LandingQuality.perfect => 14,
-      LandingQuality.good => 35,
-      LandingQuality.bellyFlop => 80,
-    };
-    final spread = q == LandingQuality.bellyFlop ? 260.0 : 120.0;
+  void _dust(double x, int count, double spread) {
     final rnd = math.Random();
-    world.add(ParticleSystemComponent(
-      position: Vector2(diver.position.x, 0),
+    _addEffect(ParticleSystemComponent(
+      position: Vector2(x, -2),
       priority: 20,
       particle: Particle.generate(
         count: count,
-        lifespan: 1.1,
-        generator: (i) => AcceleratedParticle(
-          acceleration: Vector2(0, gravity * 0.9),
-          speed: Vector2((rnd.nextDouble() - 0.5) * spread,
-              -150 - rnd.nextDouble() * (q == LandingQuality.perfect ? 120 : 260)),
-          position: Vector2((rnd.nextDouble() - 0.5) * 20, 0),
-          child: CircleParticle(
-            radius: 2.5 + rnd.nextDouble() * 4,
-            paint: Paint()
-              ..color = Color.lerp(const Color(0xFFFFFFFF), level.waterColor,
-                  rnd.nextDouble() * 0.6)!,
-          ),
-        ),
+        lifespan: 0.9,
+        generator: (i) {
+          final dir = rnd.nextBool() ? 1 : -1;
+          return AcceleratedParticle(
+            acceleration: Vector2(-dir * 60, 20),
+            speed: Vector2(dir * (30 + rnd.nextDouble() * spread), -10 - rnd.nextDouble() * 50),
+            child: CircleParticle(
+              radius: 3 + rnd.nextDouble() * 5,
+              paint: Paint()..color = const Color(0x88B0A898),
+            ),
+          );
+        },
       ),
     ));
   }
 
   void _updateCamera(double dt) {
-    final target = Vector2(camX, _cameraTargetY());
     final vf = camera.viewfinder;
-    vf.position += (target - vf.position) * math.min(1, dt * 6);
+    vf.position += (_cameraTarget() - vf.position) * math.min(1, dt * 6);
     if (_shake > 0) {
       _shake -= dt;
       final r = math.Random();

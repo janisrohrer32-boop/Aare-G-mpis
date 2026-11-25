@@ -72,8 +72,8 @@ class Pose {
 /// Zeichnet die Figur (Seitenansicht, Blick nach rechts).
 /// Wird im Spiel und im Shop (Vorschau) verwendet.
 class WomanPainter {
-  static const double torsoLen = 20, upperArm = 11, foreArm = 10, thigh = 15, shin = 15;
-  static const double headR = 6.6;
+  static const double torsoLen = 21, upperArm = 12, foreArm = 11, thigh = 16.5, shin = 16;
+  static const double headR = 5.2;
 
   static Offset dir(double a) => Offset(math.sin(a), -math.cos(a));
 
@@ -145,27 +145,42 @@ class WomanPainter {
   static Color _dark(Color c, bool darker) =>
       darker ? Color.lerp(c, const Color(0xFF000000), 0.22)! : c;
 
+  /// Glied mit Licht- und Schattenkante (Licht kommt von rechts oben).
+  static void _limb(Canvas c, Offset a, Offset b, Color color, double w) {
+    c.drawLine(a, b, _stroke(color, w));
+    final d = b - a;
+    final len = d.distance;
+    if (len == 0) return;
+    final n = Offset(-d.dy / len, d.dx / len);
+    // Seite, die zur Lichtquelle zeigt
+    final lightSide = (n.dx - n.dy) >= 0 ? n : -n;
+    c.drawLine(a + lightSide * (w * 0.22), b + lightSide * (w * 0.22),
+        _stroke(Color.lerp(color, const Color(0xFFFFFFFF), 0.22)!, w * 0.28));
+    c.drawLine(a - lightSide * (w * 0.3), b - lightSide * (w * 0.3),
+        _stroke(Color.lerp(color, const Color(0xFF000000), 0.2)!, w * 0.25));
+  }
+
   static void _arm(Canvas c, Offset s, Offset e, Offset h, Color skin, OutfitDef o,
       {bool darker = false}) {
     final sleeve = o.longSleeves ? _dark(o.top, darker) : skin;
-    c.drawLine(s, e, _stroke(o.longSleeves ? sleeve : skin, 4.4));
+    _limb(c, s, e, o.longSleeves ? sleeve : skin, 4.2);
     if (!o.longSleeves) {
       // kurzer Ärmel
       c.drawLine(s, Offset.lerp(s, e, 0.35)!, _stroke(_dark(o.top, darker), 4.8));
     }
-    c.drawLine(e, h, _stroke(o.longSleeves ? sleeve : skin, 3.7));
+    _limb(c, e, h, o.longSleeves ? sleeve : skin, 3.4);
     if (o.longSleeves) {
       c.drawLine(Offset.lerp(e, h, 0.85)!, h, _stroke(skin, 3.6));
     }
-    c.drawCircle(h, 2.3, Paint()..color = skin);
+    c.drawCircle(h, 2.0, Paint()..color = skin);
   }
 
   static void _leg(Canvas c, Offset hip, Offset k, Offset f, Color skin, OutfitDef o,
       bool covered,
       {bool darker = false}) {
     final cloth = _dark(o.bottom, darker);
-    c.drawLine(hip, k, _stroke(covered ? cloth : skin, 6.8));
-    c.drawLine(k, f, _stroke(covered ? cloth : skin, 5.0));
+    _limb(c, hip, k, covered ? cloth : skin, 6.4);
+    _limb(c, k, f, covered ? cloth : skin, 4.6);
     if (o.bottomStyle == BottomStyle.shorts) {
       c.drawLine(hip, Offset.lerp(hip, k, 0.45)!, _stroke(cloth, 7.4));
     }
@@ -214,15 +229,26 @@ class WomanPainter {
       return p..close();
     }
 
+    Paint shaded(Color col) => Paint()
+      ..shader = Gradient.linear(at(0.5, 6), at(0.5, -6), [
+        Color.lerp(col, const Color(0xFFFFFFFF), 0.15)!,
+        col,
+        Color.lerp(col, const Color(0xFF000000), 0.28)!,
+      ], const [0, 0.45, 1]);
+
     // Haut darunter
-    c.drawPath(shape(0, 1), Paint()..color = skin);
+    c.drawPath(shape(0, 1), shaded(skin));
     // Hose / Unterteil
     if (o.bottomStyle != BottomStyle.skirt) {
-      c.drawPath(shape(0, 0.36), Paint()..color = o.bottom);
+      c.drawPath(shape(0, 0.36), shaded(o.bottom));
     }
     // Oberteil
     final topFrom = o.id == 'sport' ? 0.55 : (o.bottomStyle == BottomStyle.skirt ? 0.0 : 0.3);
-    c.drawPath(shape(topFrom, 1), Paint()..color = o.top);
+    c.drawPath(shape(topFrom, 1), shaded(o.top));
+    // Stofffalten
+    final fold = _stroke(Color.lerp(o.top, const Color(0xFF000000), 0.25)!, 0.7);
+    c.drawLine(at(topFrom + 0.08, 1.5), at(topFrom + 0.2, -1.0), fold);
+    c.drawLine(at(0.82, 3.0), at(0.7, 0.5), fold);
     if (o.accent != null) {
       c.drawLine(at(0.55, 4.2), at(0.95, 4.0), _stroke(o.accent!, 1.4));
     }
@@ -270,8 +296,14 @@ class WomanPainter {
     c.save();
     c.translate(center.dx, center.dy);
     c.rotate(torso * 0.7);
-    final hair = Paint()..color = ch.hair;
-    final r = headR;
+    c.scale(headR / 6.6);
+    final hair = Paint()
+      ..shader = Gradient.linear(const Offset(0, -7), const Offset(0, 12), [
+        Color.lerp(ch.hair, const Color(0xFFFFFFFF), 0.18)!,
+        ch.hair,
+        Color.lerp(ch.hair, const Color(0xFF000000), 0.35)!,
+      ], const [0, 0.4, 1]);
+    const r = 6.6;
 
     // Haare hinten
     switch (ch.hairStyle) {

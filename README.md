@@ -5,11 +5,12 @@ Spring vom Hochhaus-Balkon, mach in der Luft Saltos und lande in Superhelden-Pos
 
 ## Stand
 
-- Absprung vom Balkon eines Hochhauses (8. Stock, 24 m) über einer Stadt-Skyline
+- **Endlos-Modus:** Absprung vom Balkon eines Hochhauses. Nach jeder Landung geht es 3 Stockwerke höher (Start im 8. Stock), mit Höhenbonus.
 - Realistische Drehung: einmal angestossen dreht die Figur weiter, bis man gegensteuert
 - Volle Umdrehungen zählen als Rückwärtssalto (+100) oder Vorwärtssalto (+80)
 - Landung auf dem Asphalt: **Superhelden-Landung** (Risse im Boden), **Gelandet** oder **Bruchlandung**
-- Style-Level (0 bis 5 Sterne): gute Landungen lassen die Figur strahlen, Bruchlandungen hinterlassen Spuren (zerzauste Haare, Schmutz, Pflaster)
+- Style-Sterne (Start 3, max. 5): Superhelden-Landung +1, Bruchlandung -1. Bei 0 Sternen ist **Game Over**. Man sieht es der Figur an (Glanz und Glitzer oder zerzauste Haare, Schmutz, Pflaster).
+- Hip-Hop-Soundtrack, Soundeffekte und Sprüche („Whoop whoop!“ / „Hell naaah!“), Ton-Schalter oben links
 - Münzen pro Sprung, Shop mit 5 Charakteren und 6 Outfits (alles lokal gespeichert)
 
 ## Steuerung
@@ -34,6 +35,10 @@ Für die Superhelden-Landung muss sie aufrecht und fast ohne Drehung unten ankom
 
 Tests: `flutter test`
 
+## Musik und Sounds
+
+Alle Sounds in `assets/audio/` wurden für dieses Projekt per Code erzeugt (Musik und Effekte synthetisiert, Stimme mit der Open-Source-Sprachausgabe Piper). Sie können frei ausgetauscht werden.
+
 ## Ordnerstruktur
 
 ```
@@ -51,4 +56,5 @@ Die Figur wird per Code gezeichnet (`components/woman_painter.dart`) und kann sp
 
 - Kombo-Multiplikator und mehr Tricks (z. B. Schraube)
 - Weitere Absprungorte und Freischaltung
+- Echte Grafiken (Sprites) für einen fotorealistischeren Look
 - Sound und Feinschliff

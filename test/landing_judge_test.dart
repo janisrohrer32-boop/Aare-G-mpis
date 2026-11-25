@@ -71,12 +71,11 @@ void main() {
       st.selectOutfit('hero');
       expect(st.outfit.id, 'hero');
     });
-    test('Style bleibt zwischen 0 und 5', () {
+    test('bester Stock wird gemerkt', () {
       final st = StorageService.inMemory();
-      for (var i = 0; i < 10; i++) {
-        st.changeStyle(-1);
-      }
-      expect(st.style, 0);
+      st.submitFloor('tower', 11);
+      st.submitFloor('tower', 8);
+      expect(st.bestFloor('tower'), 11);
     });
   });
 

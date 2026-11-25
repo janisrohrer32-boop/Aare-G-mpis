@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../components/woman_painter.dart';
 import '../models/character.dart';
+import '../services/audio_service.dart';
+import '../services/storage_service.dart';
 
 /// Vorschau der Figur (für Menü und Shop).
 class FigurePreview extends StatelessWidget {
@@ -91,10 +93,32 @@ class StyleStars extends StatelessWidget {
 }
 
 String styleLabel(int s) => switch (s) {
-      0 => 'Ziemlich ramponiert',
+      0 => 'Total ramponiert',
       1 => 'Zerzaust',
       2 => 'Etwas mitgenommen',
       3 => 'Normal',
       4 => 'Strahlend',
       _ => 'Superstar',
     };
+
+/// Ton an/aus.
+class MuteButton extends StatelessWidget {
+  const MuteButton({super.key, required this.storage, required this.audio});
+  final StorageService storage;
+  final AudioService audio;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: audio,
+      builder: (_, _) => IconButton.filledTonal(
+        tooltip: audio.muted ? 'Ton an' : 'Ton aus',
+        onPressed: () {
+          audio.toggleMute();
+          storage.muted = audio.muted;
+        },
+        icon: Icon(audio.muted ? Icons.volume_off : Icons.volume_up),
+      ),
+    );
+  }
+}

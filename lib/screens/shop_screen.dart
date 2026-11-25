@@ -45,7 +45,7 @@ class ShopScreen extends StatelessWidget {
                   owned: storage.ownsCharacter(c.id),
                   selected: storage.character.id == c.id,
                   preview: FigurePreview(
-                      character: c, outfit: storage.outfit, style: storage.style, height: 150),
+                      character: c, outfit: storage.outfit, style: 4, height: 150),
                   onBuy: () => _buy(context, 'char', c.id, c.price),
                   onSelect: () => storage.selectCharacter(c.id),
                 ),
@@ -58,7 +58,7 @@ class ShopScreen extends StatelessWidget {
                   owned: storage.ownsOutfit(o.id),
                   selected: storage.outfit.id == o.id,
                   preview: FigurePreview(
-                      character: storage.character, outfit: o, style: storage.style, height: 150),
+                      character: storage.character, outfit: o, style: 4, height: 150),
                   onBuy: () => _buy(context, 'outfit', o.id, o.price),
                   onSelect: () => storage.selectOutfit(o.id),
                 ),

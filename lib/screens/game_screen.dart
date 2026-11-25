@@ -5,13 +5,15 @@ import '../game/cliff_dive_game.dart';
 import '../models/landing.dart';
 import '../models/level.dart';
 import '../models/trick.dart';
+import '../services/audio_service.dart';
 import '../services/storage_service.dart';
 import 'widgets.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.level, required this.storage});
+  const GameScreen({super.key, required this.level, required this.storage, required this.audio});
   final JumpLevel level;
   final StorageService storage;
+  final AudioService audio;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -19,7 +21,7 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   late final CliffDiveGame game =
-      CliffDiveGame(level: widget.level, storage: widget.storage);
+      CliffDiveGame(level: widget.level, storage: widget.storage, audio: widget.audio);
 
   @override
   Widget build(BuildContext context) {
@@ -27,13 +29,17 @@ class _GameScreenState extends State<GameScreen> {
       backgroundColor: Colors.black,
       body: Listener(
         behavior: HitTestBehavior.opaque,
-        onPointerDown: (e) => game.input.pointerDown(e.localPosition),
+        onPointerDown: (e) {
+          widget.audio.startMusic();
+          game.input.pointerDown(e.localPosition);
+        },
         onPointerMove: (e) => game.input.pointerMove(e.localPosition),
         onPointerUp: (e) => game.input.pointerUp(e.localPosition),
         child: GameWidget(
           game: game,
           overlayBuilderMap: {
-            'hud': (context, CliffDiveGame g) => _Hud(game: g),
+            'hud': (context, CliffDiveGame g) =>
+                _Hud(game: g, storage: widget.storage, audio: widget.audio),
             'result': (context, CliffDiveGame g) => _ResultPanel(game: g),
           },
           initialActiveOverlays: const ['hud'],
@@ -44,8 +50,10 @@ class _GameScreenState extends State<GameScreen> {
 }
 
 class _Hud extends StatelessWidget {
-  const _Hud({required this.game});
+  const _Hud({required this.game, required this.storage, required this.audio});
   final CliffDiveGame game;
+  final StorageService storage;
+  final AudioService audio;
 
   @override
   Widget build(BuildContext context) {
@@ -55,15 +63,37 @@ class _Hud extends StatelessWidget {
         child: Column(
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 IconButton.filledTonal(
                   onPressed: () => Navigator.of(context).pop(),
                   icon: const Icon(Icons.arrow_back),
                 ),
+                const SizedBox(width: 6),
+                MuteButton(storage: storage, audio: audio),
                 const Spacer(),
                 ValueListenableBuilder<int>(
-                  valueListenable: game.liveScore,
-                  builder: (_, v, _) => _Pill(text: '$v Punkte'),
+                  valueListenable: game.hudVersion,
+                  builder: (_, _, _) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      ValueListenableBuilder<int>(
+                        valueListenable: game.liveScore,
+                        builder: (_, v, _) => _Pill(text: '$v Punkte'),
+                      ),
+                      const SizedBox(height: 6),
+                      _Pill(text: '${game.floor}. Stock · ${game.level.heightOf(game.floor).toStringAsFixed(0)} m', small: true),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: StyleStars(style: game.style, size: 18),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -90,7 +120,7 @@ class _Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 14, vertical: small ? 8 : 10),
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: small ? 7 : 10),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(20),
@@ -125,11 +155,14 @@ class _ResultPanel extends StatelessWidget {
     for (final t in r.tricks) {
       counts[t] = (counts[t] ?? 0) + 1;
     }
-    final styleText = r.styleAfter > r.styleBefore
-        ? 'Sie strahlt noch mehr!'
-        : r.styleAfter < r.styleBefore
-            ? 'Das hat Spuren hinterlassen...'
-            : styleLabel(r.styleAfter);
+    final styleText = r.gameOver
+        ? 'Total ramponiert. Das war\'s für diesen Lauf.'
+        : r.styleAfter > r.styleBefore
+            ? 'Sie strahlt noch mehr!'
+            : r.styleAfter < r.styleBefore
+                ? 'Das hat Spuren hinterlassen...'
+                : styleLabel(r.styleAfter);
+    final next = r.floor + game.level.floorsPerJump;
     return Center(
       child: Container(
         width: 330,
@@ -142,9 +175,14 @@ class _ResultPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(r.landing.label,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: color)),
+            if (r.gameOver)
+              const Text('GAME OVER',
+                  style: TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: Colors.black87))
+            else
+              Text(r.landing.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: color)),
+            Text('${r.floor}. Stock', style: const TextStyle(color: Colors.black54)),
             const SizedBox(height: 10),
             if (r.tricks.isEmpty)
               const Text('Keine Saltos. Wisch in der Luft nach oben oder unten!',
@@ -156,33 +194,54 @@ class _ResultPanel extends StatelessWidget {
                   const Spacer(),
                   Text('+${e.value * e.key.basePoints}'),
                 ]),
-            const Divider(height: 22),
             Row(children: [
               const Text('Landung'),
               const Spacer(),
               Text('x${r.landing.multiplier}  +${r.landing.bonus}'),
             ]),
-            const SizedBox(height: 8),
-            Text('${r.total} Punkte',
+            if (r.heightBonus > 0)
+              Row(children: [
+                const Text('Höhenbonus'),
+                const Spacer(),
+                Text('+${r.heightBonus}'),
+              ]),
+            const Divider(height: 22),
+            Row(children: [
+              const Text('Dieser Sprung'),
+              const Spacer(),
+              Text('+${r.jumpPoints}', style: const TextStyle(fontWeight: FontWeight.w700)),
+            ]),
+            const SizedBox(height: 6),
+            Text('${r.runTotal} Punkte',
                 style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
-            Text(r.newHighscore ? 'Neuer Highscore!' : 'Highscore: ${r.highscore}'),
-            const SizedBox(height: 10),
+            if (r.gameOver)
+              Text(r.newHighscore ? 'Neuer Rekord!' : 'Rekord: ${r.highscore}'),
+            const SizedBox(height: 8),
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.monetization_on, color: Color(0xFFFFC107)),
               const SizedBox(width: 4),
               Text('+${r.coins} Münzen', style: const TextStyle(fontWeight: FontWeight.w700)),
             ]),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             StyleStars(style: r.styleAfter),
-            Text(styleText, style: const TextStyle(color: Colors.black54)),
+            Text(styleText, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
             const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: game.reset,
-              icon: const Icon(Icons.replay),
-              label: const Text('Nochmal springen'),
-              style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14)),
-            ),
+            if (r.gameOver)
+              FilledButton.icon(
+                onPressed: game.newRun,
+                icon: const Icon(Icons.replay),
+                label: const Text('Neuer Lauf'),
+                style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14)),
+              )
+            else
+              FilledButton.icon(
+                onPressed: game.nextJump,
+                icon: const Icon(Icons.arrow_upward),
+                label: Text('Weiter: $next. Stock'),
+                style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14)),
+              ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Zum Menü'),

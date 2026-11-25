@@ -2,18 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'screens/menu_screen.dart';
+import 'services/audio_service.dart';
 import 'services/storage_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   final storage = await StorageService.create();
-  runApp(CliffDiveApp(storage: storage));
+  final audio = AudioService(muted: storage.muted);
+  audio.preload();
+  runApp(CliffDiveApp(storage: storage, audio: audio));
 }
 
 class CliffDiveApp extends StatelessWidget {
-  const CliffDiveApp({super.key, required this.storage});
+  const CliffDiveApp({super.key, required this.storage, required this.audio});
   final StorageService storage;
+  final AudioService audio;
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +28,7 @@ class CliffDiveApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF37474F)),
         useMaterial3: true,
       ),
-      home: MenuScreen(storage: storage),
+      home: MenuScreen(storage: storage, audio: audio),
     );
   }
 }

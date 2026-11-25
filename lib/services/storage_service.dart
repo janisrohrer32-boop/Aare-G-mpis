@@ -63,14 +63,18 @@ class StorageService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- Style-Level (0 = zerzaust, 5 = glänzend) ---
-  static const int maxStyle = 5;
-  int get style => _get<int>('style') ?? 3;
+  // --- Bester Lauf ---
+  int bestFloor(String levelId) => _get<int>('bestfloor_$levelId') ?? 0;
 
-  void changeStyle(int delta) {
-    _set('style', (style + delta).clamp(0, maxStyle));
+  void submitFloor(String levelId, int floor) {
+    if (floor <= bestFloor(levelId)) return;
+    _set('bestfloor_$levelId', floor);
     notifyListeners();
   }
+
+  // --- Ton ---
+  bool get muted => (_get<int>('muted') ?? 0) == 1;
+  set muted(bool v) => _set('muted', v ? 1 : 0);
 
   // --- Shop ---
   List<String> _owned(String kind) {
